@@ -23,7 +23,9 @@ Open http://127.0.0.1:5173. SQLite is the local default (`suppliertrust.db`). `S
 
 ## Public demo configuration
 
-The Vercel frontend is built with `VITE_DEMO_MODE=true` and `VITE_API_URL=https://<render-service>.onrender.com`. Render must have:
+The fictional, read-only demo is live at [suppliertrust-ai-risk-intelligence.vercel.app](https://suppliertrust-ai-risk-intelligence.vercel.app). Its API runs on Render and uses an isolated Neon PostgreSQL database; deployment and verification details are in [DEPLOYMENT.md](DEPLOYMENT.md) and [PROJECT_STATUS.md](PROJECT_STATUS.md).
+
+The Vercel frontend is built with `VITE_DEMO_MODE=true` and `VITE_API_URL=https://suppliertrust-api-hp5b.onrender.com`. Render has:
 
 - `SUPPLIERTRUST_MODE=demo`
 - `DATABASE_URL` set to the isolated Neon PostgreSQL URL (required by the Render startup check)
@@ -31,7 +33,7 @@ The Vercel frontend is built with `VITE_DEMO_MODE=true` and `VITE_API_URL=https:
 
 Demo mode returns fixed fictional data from `/api/demo/*`, allows only `GET` on an explicit route allowlist, applies a process-wide 120 requests/minute cap, disables API docs, and returns security headers. All writes, uploads, reviewer decisions, screening runs, and dataset refreshes are denied. The standard local API is blocked. No visitor records are created, so visitors cannot access one another's data. The demo banner identifies the sample as fictional and read-only.
 
-The Render and Vercel configs are preparation only. No hosted resources have been created or deployed.
+The hosted service is deliberately small and may sleep or become unavailable after free-tier usage limits are reached. It contains only synthetic demo information; do not enter real supplier information.
 
 ## What the risk indicators mean
 

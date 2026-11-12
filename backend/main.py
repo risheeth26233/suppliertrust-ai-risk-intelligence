@@ -5,7 +5,7 @@ from pathlib import Path
 from datetime import date, datetime, timezone, timedelta
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, Response
 from fastapi import UploadFile, File
 from pypdf import PdfReader
 from pydantic import BaseModel, Field, field_validator
@@ -24,7 +24,7 @@ engine=create_engine(database_url,connect_args={'check_same_thread':False} if da
 app = FastAPI(title='SupplierTrust', version='0.1.0', docs_url=None if demo_mode else '/docs', redoc_url=None if demo_mode else '/redoc', openapi_url=None if demo_mode else '/openapi.json')
 origins=[x.strip() for x in os.getenv('SUPPLIERTRUST_ALLOWED_ORIGINS','http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174').split(',') if x.strip()]
 if os.getenv('RENDER') and not os.getenv('SUPPLIERTRUST_ALLOWED_ORIGINS'): raise RuntimeError('Set SUPPLIERTRUST_ALLOWED_ORIGINS to the exact Vercel demo origin before starting SupplierTrust on Render.')
-app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=['GET','POST','PUT','DELETE'], allow_headers=['Content-Type'])
+app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=['GET'] if demo_mode else ['GET','POST','PUT','DELETE'], allow_headers=['Content-Type'])
 demo_requests=deque()
 OFAC_HOSTS={'sanctionslistservice.ofac.treas.gov','wc2h-sls-prod-public-published.s3.us-gov-west-1.amazonaws.com'}
 
@@ -51,7 +51,15 @@ async def security_boundary(request, call_next):
     except ValueError: return secure_response(PlainTextResponse('Invalid content length',status_code=400),request)
     if content_length>6*1024*1024: return secure_response(PlainTextResponse('Request is too large',status_code=413),request)
     if demo_mode:
-        if request.method!='GET' or request.url.path not in ('/healthz','/api/demo/suppliers','/api/demo/screening/status') and not re.fullmatch(r'/api/demo/suppliers/\d+(?:/report)?',request.url.path):
+        read_route=request.url.path in ('/healthz','/api/demo/suppliers','/api/demo/screening/status') or re.fullmatch(r'/api/demo/suppliers/\d+(?:/report)?',request.url.path)
+        preflight=request.method=='OPTIONS' and request.headers.get('access-control-request-method')=='GET'
+        if request.method=='OPTIONS':
+            origin=request.headers.get('origin','')
+            requested_headers={x.strip().lower() for x in request.headers.get('access-control-request-headers','').split(',') if x.strip()}
+            if read_route and preflight and origin in origins and requested_headers<={'content-type'}:
+                return secure_response(Response(status_code=200,headers={'Access-Control-Allow-Origin':origin,'Access-Control-Allow-Methods':'GET','Access-Control-Allow-Headers':'Content-Type','Access-Control-Max-Age':'600','Vary':'Origin'}),request)
+            return secure_response(PlainTextResponse('Public demonstration is read-only and contains fictional sample data.',status_code=403),request)
+        if not read_route or request.method!='GET':
             return secure_response(PlainTextResponse('Public demonstration is read-only and contains fictional sample data.',status_code=403),request)
         now=time.monotonic()
         while demo_requests and demo_requests[0] < now-60: demo_requests.popleft()
