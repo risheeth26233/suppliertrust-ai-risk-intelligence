@@ -1,9 +1,13 @@
-import os, sqlite3, re, json, difflib, unicodedata
+import os, sqlite3, re, json, difflib, unicodedata, uuid
+from io import BytesIO
+from pathlib import Path
 from datetime import date, datetime, timezone
 from contextlib import contextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
+from fastapi import UploadFile, File
+from pypdf import PdfReader
 from pydantic import BaseModel, Field, field_validator
 
 DB = os.getenv('SUPPLIERTRUST_DB', 'suppliertrust.db')
@@ -22,7 +26,7 @@ def connection():
 
 def init():
     with connection() as db:
-        db.executescript('''CREATE TABLE IF NOT EXISTS suppliers (id INTEGER PRIMARY KEY, name TEXT NOT NULL, country TEXT NOT NULL, category TEXT NOT NULL, identifier TEXT NOT NULL DEFAULT '', contact TEXT NOT NULL DEFAULT '', website TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS evidence (id INTEGER PRIMARY KEY, supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE, source_url TEXT NOT NULL, reviewer TEXT NOT NULL, verified_on TEXT NOT NULL, status TEXT NOT NULL, notes TEXT NOT NULL); CREATE TABLE IF NOT EXISTS screenings (id INTEGER PRIMARY KEY, supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE, checked_at TEXT NOT NULL, candidate TEXT NOT NULL, similarity REAL NOT NULL, decision TEXT NOT NULL DEFAULT 'pending', reviewer TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '');''')
+        db.executescript('''CREATE TABLE IF NOT EXISTS suppliers (id INTEGER PRIMARY KEY, name TEXT NOT NULL, country TEXT NOT NULL, category TEXT NOT NULL, identifier TEXT NOT NULL DEFAULT '', contact TEXT NOT NULL DEFAULT '', website TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS evidence (id INTEGER PRIMARY KEY, supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE, source_url TEXT NOT NULL, reviewer TEXT NOT NULL, verified_on TEXT NOT NULL, status TEXT NOT NULL, notes TEXT NOT NULL); CREATE TABLE IF NOT EXISTS screenings (id INTEGER PRIMARY KEY, supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE, checked_at TEXT NOT NULL, candidate TEXT NOT NULL, similarity REAL NOT NULL, decision TEXT NOT NULL DEFAULT 'pending', reviewer TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT ''); CREATE TABLE IF NOT EXISTS documents (id INTEGER PRIMARY KEY, supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE, filename TEXT NOT NULL, stored_name TEXT NOT NULL, uploaded_at TEXT NOT NULL, extracted_name TEXT NOT NULL DEFAULT '', extracted_identifier TEXT NOT NULL DEFAULT '', extraction_status TEXT NOT NULL, discrepancies TEXT NOT NULL DEFAULT '[]');''')
 init()
 
 class Supplier(BaseModel):
@@ -71,15 +75,21 @@ def get_supplier(db, sid):
 def details(db, sid):
     s=get_supplier(db,sid)
     ev=[dict(x) for x in db.execute('SELECT * FROM evidence WHERE supplier_id=? ORDER BY id DESC',(sid,))]
+    docs=[dict(x) for x in db.execute('SELECT * FROM documents WHERE supplier_id=? ORDER BY id DESC',(sid,))]
+    for doc in docs:
+        doc['discrepancies']=json.loads(doc['discrepancies'])
     screen=db.execute('SELECT * FROM screenings WHERE supplier_id=? ORDER BY id DESC LIMIT 1',(sid,)).fetchone()
     screen=dict(screen) if screen else None
     factors=[]
     if not any(e['status']=='verified' for e in ev): factors.append({'label':'No manually verified evidence recorded','points':20,'basis':'Missing verification; not an adverse finding.'})
     if identifier_status(s['identifier']) in ('GSTIN checksum invalid','Format not recognized'): factors.append({'label':'Identifier requires review','points':15,'basis':identifier_status(s['identifier'])})
+    for doc in docs:
+        for discrepancy in doc['discrepancies']:
+            factors.append({'label':discrepancy,'points':15,'basis':f"Extracted from PDF {doc['filename']}; OCR/text extraction is not authenticity verification."})
     if screen and screen['candidate'] and screen['decision']=='pending': factors.append({'label':'Potential synthetic match awaiting review','points':30,'basis':'Name similarity only; identity is unconfirmed.'})
     if screen and screen['candidate'] and screen['decision']=='confirmed': factors.append({'label':'Synthetic match confirmed by reviewer','points':30,'basis':'Fixture exercise only; not a real sanctions finding.'})
     coverage=round(100*(bool(s['identifier'])+bool(ev)+bool(screen))/3)
-    return {**s,'identifier_status':identifier_status(s['identifier']),'evidence':ev,'screening':screen,'risk':{'score':sum(x['points'] for x in factors),'coverage':coverage,'confidence':'Limited' if coverage<100 else 'Moderate','factors':factors,'review_status':'Review required' if factors else 'No indicators recorded'}}
+    return {**s,'identifier_status':identifier_status(s['identifier']),'evidence':ev,'documents':docs,'screening':screen,'risk':{'score':min(100,sum(x['points'] for x in factors)),'coverage':coverage,'confidence':'Limited' if coverage<100 else 'Moderate','factors':factors,'review_status':'Review required' if factors else 'No indicators recorded'}}
 
 @app.get('/api/suppliers')
 def list_suppliers(q: str = '', category: str = ''):
@@ -126,6 +136,32 @@ def screen(sid:int):
         # Fictional fixture only, never a real sanctions source.
         candidate='Fictional Example Trading Co'; score=difflib.SequenceMatcher(None,normalize(s['name']),normalize(candidate)).ratio()
         db.execute('INSERT INTO screenings(supplier_id,checked_at,candidate,similarity) VALUES(?,?,?,?)',(sid,datetime.now(timezone.utc).isoformat(),candidate if score>=.8 else '',score))
+        return details(db,sid)
+
+@app.post('/api/suppliers/{sid}/documents')
+async def upload_document(sid: int, file: UploadFile = File(...)):
+    if not file.filename or Path(file.filename).suffix.lower() != '.pdf' or file.content_type != 'application/pdf':
+        raise HTTPException(415,'Only PDF documents are supported')
+    data=await file.read(5*1024*1024+1)
+    if len(data)>5*1024*1024: raise HTTPException(413,'PDF exceeds the 5 MB limit')
+    if not data.startswith(b'%PDF-'): raise HTTPException(415,'File content is not a valid PDF')
+    try:
+        reader=PdfReader(BytesIO(data), strict=True)
+        text=' '.join((page.extract_text() or '') for page in reader.pages[:20])[:100_000]
+    except Exception: raise HTTPException(422,'PDF could not be safely read')
+    with connection() as db:
+        supplier=get_supplier(db,sid)
+        names=re.findall(r'(?im)^\s*(?:legal\s+)?(?:business\s+)?name\s*[:\-]\s*(.{2,160})',text)
+        ids=re.findall(r'\b(?:\d{2}[A-Z]{5}\d{4}[A-Z][A-Z0-9]Z[A-Z0-9]|[UL]\d{5}[A-Z]{2}\d{4}[A-Z]{3}\d{6})\b',text.upper())
+        extracted_name=names[0].strip()[:160] if names else ''
+        extracted_id=ids[0] if ids else ''
+        discrepancies=[]
+        if extracted_name and difflib.SequenceMatcher(None,normalize(extracted_name),normalize(supplier['name'])).ratio()<.8: discrepancies.append('Document business name differs from supplier record')
+        if extracted_id and supplier['identifier'] and extracted_id!=supplier['identifier'].upper(): discrepancies.append('Document registration identifier differs from supplier record')
+        stored_name=uuid.uuid4().hex+'.pdf'
+        upload_dir=Path(os.getenv('SUPPLIERTRUST_UPLOAD_DIR','private_uploads')).resolve(); upload_dir.mkdir(parents=True,exist_ok=True)
+        (upload_dir/stored_name).write_bytes(data)
+        db.execute('INSERT INTO documents(supplier_id,filename,stored_name,uploaded_at,extracted_name,extracted_identifier,extraction_status,discrepancies) VALUES(?,?,?,?,?,?,?,?)',(sid,Path(file.filename).name[:200],stored_name,datetime.now(timezone.utc).isoformat(),extracted_name,extracted_id,'text extracted' if text else 'no extractable text',json.dumps(discrepancies)))
         return details(db,sid)
 
 @app.post('/api/screenings/{screen_id}/decision')

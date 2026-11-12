@@ -29,3 +29,20 @@ def test_validation_and_uncertainty():
     assert r['screening'] is None and r['risk']['coverage']==0
     assert client.post(f"/api/suppliers/{r['id']}/evidence",json={'source_url':'https://example.com','reviewer':'A','verified_on':'2026-01-01','status':'unverified','notes':'x'}).json()['risk']['score']==20
     assert client.post(f"/api/suppliers/{r['id']}/evidence",json={'source_url':'file:///etc/passwd','reviewer':'A','verified_on':'2026-01-01','status':'verified','notes':'x'}).status_code==422
+from io import BytesIO
+from pypdf import PdfWriter
+
+def test_pdf_intake_limits_and_private_storage(tmp_path, monkeypatch):
+    monkeypatch.setenv('SUPPLIERTRUST_UPLOAD_DIR', str(tmp_path / 'private'))
+    s=client.post('/api/suppliers',json={'name':'PDF Test Supplier','country':'India','category':'Services'}).json()
+    sid=s['id']
+    bad=client.post(f'/api/suppliers/{sid}/documents',files={'file':('fake.pdf',b'not a pdf','application/pdf')})
+    assert bad.status_code==415
+    writer=PdfWriter(); writer.add_blank_page(width=72,height=72); data=BytesIO(); writer.write(data)
+    response=client.post(f'/api/suppliers/{sid}/documents',files={'file':('test.pdf',data.getvalue(),'application/pdf')})
+    assert response.status_code==200
+    doc=response.json()['documents'][0]
+    assert doc['filename']=='test.pdf' and doc['extraction_status']=='no extractable text'
+    assert list((tmp_path/'private').glob('*.pdf'))
+    too_large=client.post(f'/api/suppliers/{sid}/documents',files={'file':('big.pdf',b'%PDF-'+b'0'*(5*1024*1024),'application/pdf')})
+    assert too_large.status_code==413
