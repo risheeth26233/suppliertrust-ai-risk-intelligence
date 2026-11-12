@@ -7,3 +7,5 @@ Verification on 2026-11-12: two API integration tests passed outside the sandbox
 PDF document intake is now supported locally with a 5 MB limit, MIME and signature checks, bounded text extraction, local private storage, and basic name/identifier comparison. It does not authenticate documents or provide image OCR. These capabilities are a prototype and require security review before use beyond localhost.
 
 Database: SQLite works locally; PostgreSQL is selectable with `DATABASE_URL` using SQLAlchemy and psycopg. PostgreSQL schema creation is handled by Alembic (`python -m alembic upgrade head`). API workflow tests continue to run on SQLite.
+
+Backend additions: SQLAlchemy supports SQLite and PostgreSQL URLs; Alembic revisions 0001–0002 define relational schema and indices. Analyst-entered delivery/defect observations feed explainable risk factors and audit events record important supplier review actions. PostgreSQL itself has not been available for integration testing; migrations have been validated on clean SQLite.

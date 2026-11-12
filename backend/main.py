@@ -54,7 +54,7 @@ class Database:
 def init():
     if engine.dialect.name!='sqlite': return  # PostgreSQL schema is managed by Alembic.
     with connection() as db:
-        db.executescript('''CREATE TABLE IF NOT EXISTS suppliers (id INTEGER PRIMARY KEY, name TEXT NOT NULL, country TEXT NOT NULL, category TEXT NOT NULL, identifier TEXT NOT NULL DEFAULT '', contact TEXT NOT NULL DEFAULT '', website TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS evidence (id INTEGER PRIMARY KEY, supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE, source_url TEXT NOT NULL, reviewer TEXT NOT NULL, verified_on TEXT NOT NULL, status TEXT NOT NULL, notes TEXT NOT NULL); CREATE TABLE IF NOT EXISTS screenings (id INTEGER PRIMARY KEY, supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE, checked_at TEXT NOT NULL, candidate TEXT NOT NULL, similarity REAL NOT NULL, decision TEXT NOT NULL DEFAULT 'pending', reviewer TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'synthetic', source_ref TEXT NOT NULL DEFAULT ''); CREATE TABLE IF NOT EXISTS documents (id INTEGER PRIMARY KEY, supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE, filename TEXT NOT NULL, stored_name TEXT NOT NULL, uploaded_at TEXT NOT NULL, extracted_name TEXT NOT NULL DEFAULT '', extracted_identifier TEXT NOT NULL DEFAULT '', extraction_status TEXT NOT NULL, discrepancies TEXT NOT NULL DEFAULT '[]'); CREATE TABLE IF NOT EXISTS ofac_snapshot (id INTEGER PRIMARY KEY CHECK(id=1), retrieved_at TEXT NOT NULL, sha256 TEXT NOT NULL, records TEXT NOT NULL);''')
+        db.executescript('''CREATE TABLE IF NOT EXISTS suppliers (id INTEGER PRIMARY KEY, name TEXT NOT NULL, country TEXT NOT NULL, category TEXT NOT NULL, identifier TEXT NOT NULL DEFAULT '', contact TEXT NOT NULL DEFAULT '', website TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS evidence (id INTEGER PRIMARY KEY, supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE, source_url TEXT NOT NULL, reviewer TEXT NOT NULL, verified_on TEXT NOT NULL, status TEXT NOT NULL, notes TEXT NOT NULL); CREATE TABLE IF NOT EXISTS screenings (id INTEGER PRIMARY KEY, supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE, checked_at TEXT NOT NULL, candidate TEXT NOT NULL, similarity REAL NOT NULL, decision TEXT NOT NULL DEFAULT 'pending', reviewer TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'synthetic', source_ref TEXT NOT NULL DEFAULT ''); CREATE TABLE IF NOT EXISTS documents (id INTEGER PRIMARY KEY, supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE, filename TEXT NOT NULL, stored_name TEXT NOT NULL, uploaded_at TEXT NOT NULL, extracted_name TEXT NOT NULL DEFAULT '', extracted_identifier TEXT NOT NULL DEFAULT '', extraction_status TEXT NOT NULL, discrepancies TEXT NOT NULL DEFAULT '[]'); CREATE TABLE IF NOT EXISTS ofac_snapshot (id INTEGER PRIMARY KEY CHECK(id=1), retrieved_at TEXT NOT NULL, sha256 TEXT NOT NULL, records TEXT NOT NULL); CREATE TABLE IF NOT EXISTS performance (id INTEGER PRIMARY KEY, supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE, observed_on TEXT NOT NULL, on_time_rate REAL NOT NULL, defect_rate REAL NOT NULL, source_url TEXT NOT NULL, reviewer TEXT NOT NULL, notes TEXT NOT NULL); CREATE TABLE IF NOT EXISTS audit_events (id INTEGER PRIMARY KEY, supplier_id INTEGER REFERENCES suppliers(id) ON DELETE SET NULL, occurred_at TEXT NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL, detail TEXT NOT NULL);''')
         if db.conn.dialect.name=='sqlite': cols={r['name'] for r in db.execute('PRAGMA table_info(screenings)')}
         else: cols={r['name'] for r in db.execute('SELECT column_name AS name FROM information_schema.columns WHERE table_name=?',('screenings',))}
         for col in ('source','source_ref'):
@@ -87,6 +87,14 @@ class Decision(BaseModel):
     reviewer: str = Field(min_length=1, max_length=120)
     note: str = Field(min_length=1, max_length=1000)
 
+class Performance(BaseModel):
+    observed_on: date
+    on_time_rate: float = Field(ge=0,le=1)
+    defect_rate: float = Field(ge=0,le=1)
+    source_url: str = Field(min_length=1,max_length=500)
+    reviewer: str = Field(min_length=1,max_length=120)
+    notes: str = Field(min_length=1,max_length=1000)
+
 def normalize(s): return ' '.join(re.findall(r'[a-z0-9]+', unicodedata.normalize('NFKD', s).encode('ascii','ignore').decode().lower()))
 def parse_ofac_csv(raw):
     # OFAC's legacy SDN.CSV is headerless; column 0 is the SDN ID and column 1 the primary name.
@@ -113,6 +121,8 @@ def details(db, sid):
     s=get_supplier(db,sid)
     ev=[dict(x) for x in db.execute('SELECT * FROM evidence WHERE supplier_id=? ORDER BY id DESC',(sid,))]
     docs=[dict(x) for x in db.execute('SELECT * FROM documents WHERE supplier_id=? ORDER BY id DESC',(sid,))]
+    performance=[dict(x) for x in db.execute('SELECT * FROM performance WHERE supplier_id=? ORDER BY observed_on DESC',(sid,))]
+    audit=[dict(x) for x in db.execute('SELECT * FROM audit_events WHERE supplier_id=? ORDER BY id DESC LIMIT 50',(sid,))]
     for doc in docs:
         doc['discrepancies']=json.loads(doc['discrepancies'])
     screen=db.execute('SELECT * FROM screenings WHERE supplier_id=? ORDER BY id DESC LIMIT 1',(sid,)).fetchone()
@@ -127,10 +137,19 @@ def details(db, sid):
     for doc in docs:
         for discrepancy in doc['discrepancies']:
             factors.append({'label':discrepancy,'points':15,'basis':f"Extracted from PDF {doc['filename']}; OCR/text extraction is not authenticity verification."})
+    if performance:
+        avg_ontime=sum(x['on_time_rate'] for x in performance)/len(performance)
+        avg_defects=sum(x['defect_rate'] for x in performance)/len(performance)
+        sources='; '.join(f"{x['observed_on']} {x['source_url']}" for x in performance)
+        if avg_ontime<.8: factors.append({'label':'Low recorded on-time delivery rate','points':15,'basis':f'{avg_ontime:.0%} average across {len(performance)} reviewer-entered observations. Sources: {sources}'})
+        if avg_defects>.1: factors.append({'label':'Elevated recorded defect rate','points':15,'basis':f'{avg_defects:.0%} average across {len(performance)} reviewer-entered observations. Sources: {sources}'})
     if screen and screen['candidate'] and screen['decision']=='pending': factors.append({'label':'Potential sanctions name match awaiting review','points':30,'basis':f"{screen['source']} name similarity only; identity is unconfirmed. Source record: {screen['source_ref']}"})
     if screen and screen['candidate'] and screen['decision']=='confirmed': factors.append({'label':'Potential match confirmed by reviewer','points':30,'basis':f"Human review required; source: {screen['source']} record {screen['source_ref']}"})
     coverage=round(100*(bool(s['identifier'])+bool(ev)+bool(screen))/3)
-    return {**s,'identifier_status':identifier_status(s['identifier']),'evidence':ev,'documents':docs,'screening':screen,'risk':{'score':min(100,sum(x['points'] for x in factors)),'coverage':coverage,'confidence':'Limited' if coverage<100 else 'Moderate','factors':factors,'review_status':'Review required' if factors else 'No indicators recorded'}}
+    return {**s,'identifier_status':identifier_status(s['identifier']),'evidence':ev,'documents':docs,'performance':performance,'audit':audit,'screening':screen,'risk':{'score':min(100,sum(x['points'] for x in factors)),'coverage':coverage,'confidence':'Limited' if coverage<100 else 'Moderate','factors':factors,'review_status':'Review required' if factors else 'No indicators recorded'}}
+
+def audit(db,sid,actor,action,detail):
+    db.execute('INSERT INTO audit_events(supplier_id,occurred_at,actor,action,detail) VALUES(?,?,?,?,?)',(sid,datetime.now(timezone.utc).isoformat(),actor,action,detail))
 
 @app.get('/api/suppliers')
 def list_suppliers(q: str = '', category: str = ''):
@@ -142,6 +161,7 @@ def list_suppliers(q: str = '', category: str = ''):
 def create_supplier(s: Supplier):
     with connection() as db:
         cur=db.execute('INSERT INTO suppliers(name,country,category,identifier,contact,website,created_at) VALUES(?,?,?,?,?,?,?)',(*[getattr(s,x).strip() for x in ('name','country','category','identifier','contact','website')],date.today().isoformat()))
+        audit(db,cur.lastrowid,'local analyst','supplier_created',s.name)
         return details(db,cur.lastrowid)
 
 @app.get('/api/suppliers/{sid}')
@@ -153,6 +173,7 @@ def update_supplier(sid:int,s:Supplier):
     with connection() as db:
         get_supplier(db,sid)
         db.execute('UPDATE suppliers SET name=?,country=?,category=?,identifier=?,contact=?,website=? WHERE id=?',(*[getattr(s,x).strip() for x in ('name','country','category','identifier','contact','website')],sid))
+        audit(db,sid,'local analyst','supplier_updated',s.name)
         return details(db,sid)
 
 @app.delete('/api/suppliers/{sid}')
@@ -168,6 +189,16 @@ def add_evidence(sid:int,e:Evidence):
     with connection() as db:
         get_supplier(db,sid)
         db.execute('INSERT INTO evidence(supplier_id,source_url,reviewer,verified_on,status,notes) VALUES(?,?,?,?,?,?)',(sid,e.source_url,e.reviewer,e.verified_on.isoformat(),e.status,e.notes))
+        audit(db,sid,e.reviewer,'evidence_recorded',e.status+' '+e.source_url)
+        return details(db,sid)
+
+@app.post('/api/suppliers/{sid}/performance')
+def add_performance(sid:int,p:Performance):
+    if not re.match(r'^https?://',p.source_url): raise HTTPException(422,'Source must be an HTTP(S) URL')
+    with connection() as db:
+        get_supplier(db,sid)
+        db.execute('INSERT INTO performance(supplier_id,observed_on,on_time_rate,defect_rate,source_url,reviewer,notes) VALUES(?,?,?,?,?,?,?)',(sid,p.observed_on.isoformat(),p.on_time_rate,p.defect_rate,p.source_url,p.reviewer,p.notes))
+        audit(db,sid,p.reviewer,'performance_observed',f'on-time {p.on_time_rate:.0%}; defects {p.defect_rate:.0%}; '+p.source_url)
         return details(db,sid)
 
 @app.post('/api/suppliers/{sid}/screen')
@@ -184,6 +215,7 @@ def screen(sid:int):
         for score,record in reversed(candidates[:10]):
             db.execute('INSERT INTO screenings(supplier_id,checked_at,candidate,similarity,source,source_ref) VALUES(?,?,?,?,?,?)',(sid,datetime.now(timezone.utc).isoformat(),record['name'],score,'OFAC SDN',record['id']))
         if not candidates: db.execute('INSERT INTO screenings(supplier_id,checked_at,candidate,similarity,source,source_ref) VALUES(?,?,?,?,?,?)',(sid,datetime.now(timezone.utc).isoformat(),'','0','OFAC SDN',''))
+        audit(db,sid,'local analyst','ofac_screening',f'{len(candidates)} potential candidate(s); snapshot {snapshot["retrieved_at"]}')
         return details(db,sid)
 
 @app.post('/api/screening/ofac/refresh')
@@ -233,6 +265,7 @@ async def upload_document(sid: int, file: UploadFile = File(...)):
         upload_dir=Path(os.getenv('SUPPLIERTRUST_UPLOAD_DIR','private_uploads')).resolve(); upload_dir.mkdir(parents=True,exist_ok=True)
         (upload_dir/stored_name).write_bytes(data)
         db.execute('INSERT INTO documents(supplier_id,filename,stored_name,uploaded_at,extracted_name,extracted_identifier,extraction_status,discrepancies) VALUES(?,?,?,?,?,?,?,?)',(sid,Path(file.filename).name[:200],stored_name,datetime.now(timezone.utc).isoformat(),extracted_name,extracted_id,'text extracted' if text else 'no extractable text',json.dumps(discrepancies)))
+        audit(db,sid,'local analyst','document_uploaded',Path(file.filename).name[:200])
         return details(db,sid)
 
 @app.post('/api/screenings/{screen_id}/decision')
@@ -242,6 +275,7 @@ def decide(screen_id:int,d:Decision):
         row=db.execute('SELECT * FROM screenings WHERE id=?',(screen_id,)).fetchone()
         if not row or not row['candidate']: raise HTTPException(404,'Candidate not found')
         db.execute('UPDATE screenings SET decision=?,reviewer=?,note=? WHERE id=?',(d.decision,d.reviewer,d.note,screen_id))
+        audit(db,row['supplier_id'],d.reviewer,'screening_decision',d.decision+': '+d.note)
         return details(db,row['supplier_id'])
 
 @app.get('/api/suppliers/{sid}/report', response_class=PlainTextResponse)

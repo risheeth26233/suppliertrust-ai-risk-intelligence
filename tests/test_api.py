@@ -55,3 +55,14 @@ def test_ofac_csv_is_headerless_and_snapshot_expiry():
     assert rows==[{'id':'36','name':'Fictional Entity'},{'id':'37','name':'Second Entity'}]
     assert snapshot_fresh(datetime.now(timezone.utc).isoformat())
     assert not snapshot_fresh('2020-01-01T00:00:00+00:00')
+from datetime import datetime, timezone
+
+def test_performance_scoring_and_audit_trail():
+    s=client.post('/api/suppliers',json={'name':'Performance Test Co','country':'India','category':'Logistics'}).json(); sid=s['id']
+    p={'observed_on':'2026-01-02','on_time_rate':0.6,'defect_rate':0.2,'source_url':'https://example.com/delivery.csv','reviewer':'Analyst','notes':'Fictional test observation'}
+    s=client.post(f'/api/suppliers/{sid}/performance',json=p).json()
+    assert s['risk']['score']==50
+    assert any(x['label']=='Low recorded on-time delivery rate' for x in s['risk']['factors'])
+    assert any(x['action']=='performance_observed' for x in s['audit'])
+    p['on_time_rate']=1.1
+    assert client.post(f'/api/suppliers/{sid}/performance',json=p).status_code==422
