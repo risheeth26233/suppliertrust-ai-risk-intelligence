@@ -1,4 +1,4 @@
-import os, sqlite3, re, json, difflib, unicodedata, uuid
+import os, sqlite3, re, json, difflib, unicodedata, uuid, csv, hashlib, urllib.request
 from io import BytesIO
 from pathlib import Path
 from datetime import date, datetime, timezone
@@ -26,7 +26,10 @@ def connection():
 
 def init():
     with connection() as db:
-        db.executescript('''CREATE TABLE IF NOT EXISTS suppliers (id INTEGER PRIMARY KEY, name TEXT NOT NULL, country TEXT NOT NULL, category TEXT NOT NULL, identifier TEXT NOT NULL DEFAULT '', contact TEXT NOT NULL DEFAULT '', website TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS evidence (id INTEGER PRIMARY KEY, supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE, source_url TEXT NOT NULL, reviewer TEXT NOT NULL, verified_on TEXT NOT NULL, status TEXT NOT NULL, notes TEXT NOT NULL); CREATE TABLE IF NOT EXISTS screenings (id INTEGER PRIMARY KEY, supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE, checked_at TEXT NOT NULL, candidate TEXT NOT NULL, similarity REAL NOT NULL, decision TEXT NOT NULL DEFAULT 'pending', reviewer TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT ''); CREATE TABLE IF NOT EXISTS documents (id INTEGER PRIMARY KEY, supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE, filename TEXT NOT NULL, stored_name TEXT NOT NULL, uploaded_at TEXT NOT NULL, extracted_name TEXT NOT NULL DEFAULT '', extracted_identifier TEXT NOT NULL DEFAULT '', extraction_status TEXT NOT NULL, discrepancies TEXT NOT NULL DEFAULT '[]');''')
+        db.executescript('''CREATE TABLE IF NOT EXISTS suppliers (id INTEGER PRIMARY KEY, name TEXT NOT NULL, country TEXT NOT NULL, category TEXT NOT NULL, identifier TEXT NOT NULL DEFAULT '', contact TEXT NOT NULL DEFAULT '', website TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS evidence (id INTEGER PRIMARY KEY, supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE, source_url TEXT NOT NULL, reviewer TEXT NOT NULL, verified_on TEXT NOT NULL, status TEXT NOT NULL, notes TEXT NOT NULL); CREATE TABLE IF NOT EXISTS screenings (id INTEGER PRIMARY KEY, supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE, checked_at TEXT NOT NULL, candidate TEXT NOT NULL, similarity REAL NOT NULL, decision TEXT NOT NULL DEFAULT 'pending', reviewer TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'synthetic', source_ref TEXT NOT NULL DEFAULT ''); CREATE TABLE IF NOT EXISTS documents (id INTEGER PRIMARY KEY, supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE, filename TEXT NOT NULL, stored_name TEXT NOT NULL, uploaded_at TEXT NOT NULL, extracted_name TEXT NOT NULL DEFAULT '', extracted_identifier TEXT NOT NULL DEFAULT '', extraction_status TEXT NOT NULL, discrepancies TEXT NOT NULL DEFAULT '[]'); CREATE TABLE IF NOT EXISTS ofac_snapshot (id INTEGER PRIMARY KEY CHECK(id=1), retrieved_at TEXT NOT NULL, sha256 TEXT NOT NULL, records TEXT NOT NULL);''')
+        cols={r['name'] for r in db.execute('PRAGMA table_info(screenings)')}
+        for col in ('source','source_ref'):
+            if col not in cols: db.execute(f"ALTER TABLE screenings ADD COLUMN {col} TEXT NOT NULL DEFAULT '{'synthetic' if col=='source' else ''}'")
 init()
 
 class Supplier(BaseModel):
@@ -86,8 +89,8 @@ def details(db, sid):
     for doc in docs:
         for discrepancy in doc['discrepancies']:
             factors.append({'label':discrepancy,'points':15,'basis':f"Extracted from PDF {doc['filename']}; OCR/text extraction is not authenticity verification."})
-    if screen and screen['candidate'] and screen['decision']=='pending': factors.append({'label':'Potential synthetic match awaiting review','points':30,'basis':'Name similarity only; identity is unconfirmed.'})
-    if screen and screen['candidate'] and screen['decision']=='confirmed': factors.append({'label':'Synthetic match confirmed by reviewer','points':30,'basis':'Fixture exercise only; not a real sanctions finding.'})
+    if screen and screen['candidate'] and screen['decision']=='pending': factors.append({'label':'Potential sanctions name match awaiting review','points':30,'basis':f"{screen['source']} name similarity only; identity is unconfirmed. Source record: {screen['source_ref']}"})
+    if screen and screen['candidate'] and screen['decision']=='confirmed': factors.append({'label':'Potential match confirmed by reviewer','points':30,'basis':f"Human review required; source: {screen['source']} record {screen['source_ref']}"})
     coverage=round(100*(bool(s['identifier'])+bool(ev)+bool(screen))/3)
     return {**s,'identifier_status':identifier_status(s['identifier']),'evidence':ev,'documents':docs,'screening':screen,'risk':{'score':min(100,sum(x['points'] for x in factors)),'coverage':coverage,'confidence':'Limited' if coverage<100 else 'Moderate','factors':factors,'review_status':'Review required' if factors else 'No indicators recorded'}}
 
@@ -133,10 +136,41 @@ def add_evidence(sid:int,e:Evidence):
 def screen(sid:int):
     with connection() as db:
         s=get_supplier(db,sid)
-        # Fictional fixture only, never a real sanctions source.
-        candidate='Fictional Example Trading Co'; score=difflib.SequenceMatcher(None,normalize(s['name']),normalize(candidate)).ratio()
-        db.execute('INSERT INTO screenings(supplier_id,checked_at,candidate,similarity) VALUES(?,?,?,?)',(sid,datetime.now(timezone.utc).isoformat(),candidate if score>=.8 else '',score))
+        snapshot=db.execute('SELECT * FROM ofac_snapshot WHERE id=1').fetchone()
+        if not snapshot: raise HTTPException(409,'OFAC data has not been refreshed. Screening is not checked.')
+        candidates=[]
+        for record in json.loads(snapshot['records']):
+            score=difflib.SequenceMatcher(None,normalize(s['name']),normalize(record['name'])).ratio()
+            if score>=.80: candidates.append((score,record))
+        candidates.sort(key=lambda x:x[0],reverse=True)
+        for score,record in candidates[:10]:
+            db.execute('INSERT INTO screenings(supplier_id,checked_at,candidate,similarity,source,source_ref) VALUES(?,?,?,?,?,?)',(sid,datetime.now(timezone.utc).isoformat(),record['name'],score,'OFAC SDN',record['id']))
+        if not candidates: db.execute('INSERT INTO screenings(supplier_id,checked_at,candidate,similarity,source,source_ref) VALUES(?,?,?,?,?,?)',(sid,datetime.now(timezone.utc).isoformat(),'','0','OFAC SDN',''))
         return details(db,sid)
+
+@app.post('/api/screening/ofac/refresh')
+def refresh_ofac():
+    url='https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/SDN.CSV'
+    request=urllib.request.Request(url,headers={'User-Agent':'SupplierTrust/1.0 (supplier screening dataset refresh)'})
+    try:
+        with urllib.request.urlopen(request,timeout=30) as response:
+            if response.geturl().split('/')[2] not in ('sanctionslistservice.ofac.treas.gov','wc2h-sls-prod-public-published.s3.us-gov-west-1.amazonaws.com'): raise ValueError('Unexpected redirect host')
+            raw=response.read(15*1024*1024+1)
+        if len(raw)>15*1024*1024: raise ValueError('Dataset is too large')
+        rows=list(csv.reader(raw.decode('utf-8-sig').splitlines()))
+        records=[{'id':r[0],'name':r[1]} for r in rows[1:] if len(r)>1 and r[0].strip() and r[1].strip()]
+        if len(records)<1000: raise ValueError('Downloaded dataset failed validation')
+    except Exception as e: raise HTTPException(503,f'OFAC dataset refresh failed; existing snapshot retained: {type(e).__name__}')
+    digest=hashlib.sha256(raw).hexdigest(); retrieved=datetime.now(timezone.utc).isoformat()
+    with connection() as db:
+        db.execute('INSERT INTO ofac_snapshot(id,retrieved_at,sha256,records) VALUES(1,?,?,?) ON CONFLICT(id) DO UPDATE SET retrieved_at=excluded.retrieved_at,sha256=excluded.sha256,records=excluded.records',(retrieved,digest,json.dumps(records)))
+    return {'source':'OFAC SDN','source_url':url,'retrieved_at':retrieved,'sha256':digest,'record_count':len(records)}
+
+@app.get('/api/screening/status')
+def screening_status():
+    with connection() as db:
+        row=db.execute('SELECT retrieved_at,sha256 FROM ofac_snapshot WHERE id=1').fetchone()
+        return {'status':'available' if row else 'not_checked','source':'OFAC SDN','source_url':'https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/SDN.CSV','retrieved_at':row['retrieved_at'] if row else None,'sha256':row['sha256'] if row else None}
 
 @app.post('/api/suppliers/{sid}/documents')
 async def upload_document(sid: int, file: UploadFile = File(...)):

@@ -1,7 +1,7 @@
 import os, tempfile
 os.environ['SUPPLIERTRUST_DB'] = os.path.join(tempfile.mkdtemp(), 'test.db')
 from fastapi.testclient import TestClient
-from backend.main import app, identifier_status, normalize
+from backend.main import app, identifier_status, normalize, connection
 client=TestClient(app)
 
 def test_workflow():
@@ -12,7 +12,8 @@ def test_workflow():
     data['category']='Services'; assert client.put(f'/api/suppliers/{sid}',json=data).json()['category']=='Services'
     e={'source_url':'https://example.com','reviewer':'Analyst','verified_on':'2026-01-01','status':'verified','notes':'Synthetic evidence'}
     assert client.post(f'/api/suppliers/{sid}/evidence',json=e).json()['risk']['score']==15
-    s=client.post(f'/api/suppliers/{sid}/screen').json(); assert s['screening']['candidate'] and s['risk']['score']==45
+    with connection() as db: db.execute('INSERT OR REPLACE INTO ofac_snapshot(id,retrieved_at,sha256,records) VALUES(1,?,?,?)',('2026-01-01T00:00:00+00:00','test-hash','[{"id":"TEST-1","name":"Fictional Example Trading Co"}]'))
+    s=client.post(f'/api/suppliers/{sid}/screen').json(); assert s['screening']['candidate'] and s['screening']['source']=='OFAC SDN' and s['risk']['score']==45
     s=client.post(f"/api/screenings/{s['screening']['id']}/decision",json={'decision':'false_positive','reviewer':'Analyst','note':'Different entity'}).json(); assert s['risk']['score']==15
     report=client.get(f'/api/suppliers/{sid}/report'); assert 'Synthetic fixture' in report.text and 'https://example.com' in report.text
     assert client.delete(f'/api/suppliers/{sid}').status_code==200
