@@ -1,11 +1,25 @@
 # Project status
 
-Early implementation, not acceptance complete. SQLite-backed supplier CRUD, manually recorded evidence, identifier format checks, synthetic matching, reviewer decisions, a risk indicator calculation, a React UI and text reports are implemented. No real external sources are retrieved. The React build and full end-to-end browser workflow require installed frontend packages. PostgreSQL, migrations, real sanctions data, document processing, authentication and assessment history remain outstanding. Do not deploy publicly or use real supplier data.
+## Implemented
 
-Verification on 2026-11-12: two API integration tests passed outside the sandbox; the Vite production build passed. A browser smoke test created a fictional supplier, recorded unverified evidence, and ran the synthetic fixture. The browser test did not cover review decisions, reports, editing, responsive breakpoints, or accessibility in full; the API test covers decisions and reports. GitHub CI and full acceptance remain unverified.
+SupplierTrust now has a local-first backend and React workspace for supplier records, identifier format checks, reviewer-entered evidence, PDF text extraction and discrepancy hints, user-triggered OFAC SDN refresh and screening, human screening decisions, sourced delivery/defect observations, explainable risk factors, audit events, and text reports. The frontend includes overview, directory, supplier profile, evidence, performance, audit, and screening workflows with responsive layouts and motion styling.
 
-PDF document intake is now supported locally with a 5 MB limit, MIME and signature checks, bounded text extraction, local private storage, and basic name/identifier comparison. It does not authenticate documents or provide image OCR. These capabilities are a prototype and require security review before use beyond localhost.
+SQLite is the local default. SQLAlchemy supports PostgreSQL URLs and Alembic defines the schema and performance/audit migrations. GitHub Actions runs Alembic migrations, the API integration suite, and the frontend production build.
 
-Database: SQLite works locally; PostgreSQL is selectable with `DATABASE_URL` using SQLAlchemy and psycopg. PostgreSQL schema creation is handled by Alembic (`python -m alembic upgrade head`). API workflow tests continue to run on SQLite.
+## Verification status (2026-11-12)
 
-Backend additions: SQLAlchemy supports SQLite and PostgreSQL URLs; Alembic revisions 0001–0002 define relational schema and indices. Analyst-entered delivery/defect observations feed explainable risk factors and audit events record important supplier review actions. PostgreSQL itself has not been available for integration testing; migrations have been validated on clean SQLite.
+- API suite: 5 passed locally against SQLite.
+- Fresh SQLite Alembic migration was applied through head and reapplied successfully.
+- Vite production build passed after the frontend performance, source-status, and audit UI changes.
+- Latest observed GitHub Actions run passed the database migration, API tests, and production build for commit `cf71969`.
+- Local browser visual smoke check could not connect to loopback services in this restricted environment; no claim of full UI end-to-end verification is made.
+
+## Limitations
+
+- No authentication, authorization, or per-user data isolation. Keep the API bound to localhost; do not deploy publicly or use real supplier records.
+- GSTIN and CIN checks validate format only. Evidence and operational observations are supplied by the reviewer.
+- PDF processing extracts text only; it does not authenticate documents or OCR images.
+- OFAC SDN is the only live source. No World Bank or company registry APIs are connected. Similarity matching requires reviewer adjudication and does not establish identity.
+- No trained AI model is used. The score is an indicator index, not a fraud probability or compliance decision.
+- PostgreSQL migration syntax and the adapter have been validated with SQLite migration checks, but have not been exercised against a live PostgreSQL server.
+- The frontend build is verified; full browser interaction and accessibility testing remain outstanding.
