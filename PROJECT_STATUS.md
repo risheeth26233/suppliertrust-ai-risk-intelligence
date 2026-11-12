@@ -1,0 +1,5 @@
+# Project status
+
+Early implementation, not acceptance complete. SQLite-backed supplier CRUD, manually recorded evidence, identifier format checks, synthetic matching, reviewer decisions, a risk indicator calculation, a React UI and text reports are implemented. No real external sources are retrieved. The React build and full end-to-end browser workflow require installed frontend packages. PostgreSQL, migrations, real sanctions data, document processing, authentication and assessment history remain outstanding. Do not deploy publicly or use real supplier data.
+
+Verification on 2026-11-12: two API integration tests passed outside the sandbox; the Vite production build passed. A browser smoke test created a fictional supplier, recorded unverified evidence, and ran the synthetic fixture. The browser test did not cover review decisions, reports, editing, responsive breakpoints, or accessibility in full; the API test covers decisions and reports. GitHub CI and full acceptance remain unverified.
