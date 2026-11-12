@@ -1,52 +1,44 @@
 # SupplierTrust
 
-SupplierTrust is a local-first supplier due-diligence workspace for recording supplier details, source-backed evidence, PDF text extraction, delivery observations, screening results, and reviewer activity. Its dashboard summarizes recorded indicators and explains the source of each factor.
+SupplierTrust is a local-first supplier due-diligence prototype. It records supplier details, reviewer evidence, PDF text extraction, screening results, performance observations, audit events, and explainable risk indicators.
 
-This is a prototype for fictional data and local evaluation. It is not a production compliance or fraud-detection service. The risk score is an explainable concern index, not a probability or finding of wrongdoing.
+The public-demo configuration is intentionally **read-only** and uses one fixed fictional scenario. It accepts no supplier data or documents, makes no writes, and does not access the application database except for a health check. The full create/edit/review workflow is for local development and automated testing only.
 
-## Run locally
+## Run the local application
 
-Requires Python 3.10+ and Node.js 20+. From the project root, start the API:
+Requires Python 3.10+ and Node.js 20+. In separate terminals, from the project root:
 
 ```powershell
 python -m pip install -r requirements.txt
 python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
 ```
 
-In a second terminal:
-
 ```powershell
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
-Open http://127.0.0.1:5173. The UI uses `http://127.0.0.1:8000` by default. Set `VITE_API_URL` to the API origin when it runs elsewhere. SQLite data is stored in `suppliertrust.db`; `SUPPLIERTRUST_DB` changes the path. Use fictional records only.
+Open http://127.0.0.1:5173. SQLite is the local default (`suppliertrust.db`). `SUPPLIERTRUST_DB` can select another SQLite file. Do not use real supplier records or documents.
 
-## Features
+## Public demo configuration
 
-- Supplier create, edit, search, sort, profile, and delete workflows.
-- GSTIN checksum and CIN format checks; these do not verify registration or company status.
-- Reviewer-entered evidence with source URL, date, reviewer, and notes.
-- PDF-only intake up to 5 MB, text extraction, and basic name/identifier discrepancy hints. This does not authenticate a document and does not OCR images.
-- User-triggered refresh of the official OFAC SDN CSV, with retrieval date, SHA-256 digest, and a seven-day freshness limit. Potential name matches require a human decision; a name match is not identity confirmation and the SDN list is not complete sanctions coverage.
-- Reviewer-entered delivery and defect observations with source URLs. These can contribute explainable risk factors.
-- Supplier review audit events, a downloadable text report, and an overview dashboard.
-- SQLite locally; PostgreSQL connections through SQLAlchemy and Alembic migrations.
+The Vercel frontend is built with `VITE_DEMO_MODE=true` and `VITE_API_URL=https://<render-service>.onrender.com`. Render must have:
 
-## Data and limitations
+- `SUPPLIERTRUST_MODE=demo`
+- `DATABASE_URL` set to the isolated Neon PostgreSQL URL (required by the Render startup check)
+- `SUPPLIERTRUST_ALLOWED_ORIGINS` set to the exact deployed Vercel origin, without a wildcard
 
-The score adds documented indicators from the data currently recorded (including missing manually verified evidence, identifier format issues, pending screening matches, and recorded performance concerns). Coverage measures completion of selected workflow fields, not evidence quality. Confidence is a simple label, not a statistical confidence estimate.
+Demo mode returns fixed fictional data from `/api/demo/*`, allows only `GET` on an explicit route allowlist, applies a process-wide 120 requests/minute cap, disables API docs, and returns security headers. All writes, uploads, reviewer decisions, screening runs, and dataset refreshes are denied. The standard local API is blocked. No visitor records are created, so visitors cannot access one another's data. The demo banner identifies the sample as fictional and read-only.
 
-The app does not connect to World Bank or company registry APIs, does not use a trained AI model, does not provide image OCR, and has no authentication or user isolation. PostgreSQL is supported by the code and migrations, but has not been integration-tested against a live PostgreSQL server. Keep the API bound to localhost and do not use real supplier data or deploy publicly without security, privacy, and compliance review.
+The Render and Vercel configs are preparation only. No hosted resources have been created or deployed.
+
+## What the risk indicators mean
+
+GSTIN/CIN checks validate format, not registration. A name similarity is not identity confirmation. Delivery/defect inputs are reviewer-entered. Missing evidence and other indicators require human review. The score is a deterministic indicator index, not a trained AI model, fraud probability, or compliance decision. PDF processing extracts text only and does not verify authenticity or OCR images.
+
+Only local development can refresh the official OFAC SDN CSV. The public demo uses a synthetic screening example, not sanctions data. No World Bank or registry APIs are connected.
 
 ## Verification
 
-```powershell
-$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD='1'
-python -m pytest -q
-cd frontend
-npm run build
-```
-
-GitHub Actions runs the database migration, API suite, and frontend production build. See [PROJECT_STATUS.md](PROJECT_STATUS.md) for the current verification and remaining limitations.
+See [TESTING.md](TESTING.md) for the backend, PostgreSQL, frontend, and Playwright workflow. CI uses a disposable PostgreSQL service and captures browser screenshots as workflow artifacts. Known limits and last observed results are in [PROJECT_STATUS.md](PROJECT_STATUS.md).

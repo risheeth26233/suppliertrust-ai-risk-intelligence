@@ -2,7 +2,8 @@ import os, tempfile
 os.environ['SUPPLIERTRUST_DB'] = os.path.join(tempfile.mkdtemp(), 'test.db')
 from fastapi.testclient import TestClient
 from backend.main import app, identifier_status, normalize, connection, parse_ofac_csv, snapshot_fresh
-from datetime import datetime, timezone
+import backend.main as main
+from datetime import datetime, timezone, timedelta
 client=TestClient(app)
 
 def test_workflow():
@@ -13,12 +14,17 @@ def test_workflow():
     data['category']='Services'; assert client.put(f'/api/suppliers/{sid}',json=data).json()['category']=='Services'
     e={'source_url':'https://example.com','reviewer':'Analyst','verified_on':'2026-01-01','status':'verified','notes':'Synthetic evidence'}
     assert client.post(f'/api/suppliers/{sid}/evidence',json=e).json()['risk']['score']==15
-    with connection() as db: db.execute('INSERT OR REPLACE INTO ofac_snapshot(id,retrieved_at,sha256,records) VALUES(1,?,?,?)',(datetime.now(timezone.utc).isoformat(),'test-hash','[{"id":"TEST-1","name":"Fictional Example Trading Co"}]'))
-    s=client.post(f'/api/suppliers/{sid}/screen').json(); assert s['screening']['candidate'] and s['screening']['source']=='OFAC SDN' and s['risk']['score']==45
+    with connection() as db:
+        db.execute('DELETE FROM ofac_snapshot WHERE id=1')
+        db.execute('INSERT INTO ofac_snapshot(id,retrieved_at,sha256,records,source) VALUES(1,?,?,?,?)',(datetime.now(timezone.utc).isoformat(),'test-hash','[{"id":"TEST-1","name":"Fictional Example Trading Co"}]','Synthetic test fixture'))
+    s=client.post(f'/api/suppliers/{sid}/screen').json(); assert s['screening']['candidate'] and s['screening']['source']=='Synthetic test fixture' and s['risk']['score']==45
+    assert 'Synthetic test fixture' in client.get(f'/api/suppliers/{sid}/report').text
+    assert s['risk']['factors'][-1]['label']=='Synthetic name-match fixture awaiting review'
     s=client.post(f"/api/screenings/{s['screening']['id']}/decision",json={'decision':'false_positive','reviewer':'Analyst','note':'Different entity'}).json(); assert s['risk']['score']==15
-    report=client.get(f'/api/suppliers/{sid}/report'); assert 'OFAC SDN snapshot' in report.text and 'https://example.com' in report.text
+    report=client.get(f'/api/suppliers/{sid}/report'); assert 'Synthetic test fixture' in report.text and 'https://example.com' in report.text
     assert client.delete(f'/api/suppliers/{sid}').status_code==200
     assert client.get(f'/api/suppliers/{sid}').status_code==404
+    with connection() as db: assert db.execute("SELECT action FROM audit_events WHERE action='supplier_deleted'").fetchone()
 
 def test_validation_and_uncertainty():
     assert identifier_status('')=='Not provided'
@@ -31,6 +37,8 @@ def test_validation_and_uncertainty():
     assert r['screening'] is None and r['risk']['coverage']==0
     assert client.post(f"/api/suppliers/{r['id']}/evidence",json={'source_url':'https://example.com','reviewer':'A','verified_on':'2026-01-01','status':'unverified','notes':'x'}).json()['risk']['score']==20
     assert client.post(f"/api/suppliers/{r['id']}/evidence",json={'source_url':'file:///etc/passwd','reviewer':'A','verified_on':'2026-01-01','status':'verified','notes':'x'}).status_code==422
+    for bad_url in ('http://','https://user:password@example.com/private'):
+        assert client.post(f"/api/suppliers/{r['id']}/evidence",json={'source_url':bad_url,'reviewer':'A','verified_on':'2026-01-01','status':'verified','notes':'x'}).status_code==422
 from io import BytesIO
 from pypdf import PdfWriter
 
@@ -51,10 +59,17 @@ def test_pdf_intake_limits_and_private_storage(tmp_path, monkeypatch):
 
 
 def test_ofac_csv_is_headerless_and_snapshot_expiry():
+    import urllib.error
     rows=parse_ofac_csv(b'36,Fictional Entity,-0-,CUBA\n37,Second Entity,-0-,OTHER')
     assert rows==[{'id':'36','name':'Fictional Entity'},{'id':'37','name':'Second Entity'}]
     assert snapshot_fresh(datetime.now(timezone.utc).isoformat())
     assert not snapshot_fresh('2020-01-01T00:00:00+00:00')
+    assert not snapshot_fresh((datetime.now(timezone.utc)+timedelta(days=1)).isoformat())
+    handler=main.OfacRedirectHandler()
+    assert handler.redirect_request(urllib.request.Request('https://sanctionslistservice.ofac.treas.gov/data'),None,302,'Found',{},'https://wc2h-sls-prod-public-published.s3.us-gov-west-1.amazonaws.com/data').get_full_url().startswith('https://')
+    try: handler.redirect_request(urllib.request.Request('https://sanctionslistservice.ofac.treas.gov/data'),None,302,'Found',{},'http://127.0.0.1/private')
+    except urllib.error.HTTPError: pass
+    else: raise AssertionError('OFAC redirects must reject non-allowlisted URLs')
 from datetime import datetime, timezone
 
 def test_performance_scoring_and_audit_trail():
@@ -66,3 +81,22 @@ def test_performance_scoring_and_audit_trail():
     assert any(x['action']=='performance_observed' for x in s['audit'])
     p['on_time_rate']=1.1
     assert client.post(f'/api/suppliers/{sid}/performance',json=p).status_code==422
+
+def test_read_only_demo_boundary(monkeypatch):
+    import time
+    monkeypatch.setattr(main,'demo_mode',True)
+    main.demo_requests.clear()
+    assert client.get('/api/demo/suppliers').json()[0]['risk']['factors'][0]['basis'].startswith('Synthetic demo fixture')
+    assert client.get('/api/demo/suppliers/1/report').text.startswith('SUPPLIERTRUST — FICTIONAL')
+    assert client.get('/api/suppliers').status_code==403
+    assert client.post('/api/suppliers',json={'name':'Visitor Data','country':'India','category':'Other'}).status_code==403
+    assert client.post('/api/suppliers/1/documents').status_code==403
+    assert client.post('/api/screening/ofac/refresh').status_code==403
+    assert client.get('/docs').status_code==403
+    assert client.get('/healthz',headers={'Origin':'https://unlisted.example'}).headers.get('access-control-allow-origin') is None
+    assert client.get('/healthz',headers={'content-length':str(6*1024*1024+1)}).status_code==413
+    assert client.get('/healthz').headers['x-content-type-options']=='nosniff'
+    main.demo_requests.extend([time.monotonic()]*120)
+    limited=client.get('/api/demo/suppliers')
+    assert limited.status_code==429 and limited.headers['cache-control']=='no-store'
+    main.demo_requests.clear()

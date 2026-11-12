@@ -3,6 +3,24 @@ on: [push, pull_request]
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: suppliertrust_test
+          POSTGRES_USER: suppliertrust
+          POSTGRES_PASSWORD: suppliertrust_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U suppliertrust -d suppliertrust_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://suppliertrust:suppliertrust_test@localhost:5432/suppliertrust_test
+      SUPPLIERTRUST_MODE: local
+      SUPPLIERTRUST_ALLOWED_ORIGINS: http://127.0.0.1:5173,http://127.0.0.1:5174
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -10,13 +28,36 @@ jobs:
           python-version: '3.12'
       - run: pip install -r requirements.txt
       - run: python -m alembic upgrade head
-        env:
-          DATABASE_URL: sqlite:///./ci-migration.db
       - run: python -m pytest -q
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - run: npm install
+      - run: npm ci
         working-directory: frontend
       - run: npm run build
         working-directory: frontend
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend
+      - name: Seed browser fixture
+        run: python tests/seed_browser_db.py
+      - name: Run desktop and mobile browser workflow
+        run: |
+          python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 > backend.log 2>&1 &
+          (cd frontend && npm run dev -- --host 127.0.0.1 --port 5173) > frontend.log 2>&1 &
+          (cd frontend && VITE_DEMO_MODE=true VITE_API_URL=http://127.0.0.1:8000 npm run dev -- --host 127.0.0.1 --port 5174) > demo.log 2>&1 &
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8000/healthz >/dev/null && curl -fsS http://127.0.0.1:5173/ >/dev/null && curl -fsS http://127.0.0.1:5174/ >/dev/null && break; sleep 1; done
+          curl -fsS http://127.0.0.1:8000/healthz >/dev/null
+          curl -fsS http://127.0.0.1:5173/ >/dev/null
+          curl -fsS http://127.0.0.1:5174/ >/dev/null
+          npm --prefix frontend run test:browser
+      - name: Upload browser screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: suppliertrust-browser-results
+          path: |
+            output/playwright/
+            backend.log
+            frontend.log
+            demo.log
+          if-no-files-found: ignore

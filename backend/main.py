@@ -1,7 +1,8 @@
-import os, re, json, difflib, unicodedata, uuid, csv, hashlib, urllib.request
+import os, re, json, difflib, unicodedata, uuid, csv, hashlib, urllib.request, time
+from collections import deque
 from io import BytesIO
 from pathlib import Path
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
@@ -9,18 +10,90 @@ from fastapi import UploadFile, File
 from pypdf import PdfReader
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import create_engine, text, inspect
+from urllib.parse import urlsplit
+
+demo_mode=os.getenv('SUPPLIERTRUST_MODE','local').lower()=='demo'
+if os.getenv('RENDER') and not demo_mode:
+    raise RuntimeError('Set SUPPLIERTRUST_MODE=demo before starting SupplierTrust on Render.')
 
 database_url=os.getenv('DATABASE_URL')
 if database_url and database_url.startswith(('postgres://','postgresql://')): database_url='postgresql+psycopg://'+database_url.split('://',1)[1]
+if os.getenv('RENDER') and not database_url: raise RuntimeError('Set DATABASE_URL to the isolated Neon PostgreSQL database before starting SupplierTrust on Render.')
 if not database_url: database_url='sqlite:///'+os.path.abspath(os.getenv('SUPPLIERTRUST_DB','suppliertrust.db')).replace('\\','/')
 engine=create_engine(database_url,connect_args={'check_same_thread':False} if database_url.startswith('sqlite') else {},pool_pre_ping=True)
-app = FastAPI(title='SupplierTrust', version='0.1.0')
-app.add_middleware(CORSMiddleware, allow_origins=['http://localhost:5173','http://127.0.0.1:5173'], allow_methods=['*'], allow_headers=['*'])
+app = FastAPI(title='SupplierTrust', version='0.1.0', docs_url=None if demo_mode else '/docs', redoc_url=None if demo_mode else '/redoc', openapi_url=None if demo_mode else '/openapi.json')
+origins=[x.strip() for x in os.getenv('SUPPLIERTRUST_ALLOWED_ORIGINS','http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174').split(',') if x.strip()]
+if os.getenv('RENDER') and not os.getenv('SUPPLIERTRUST_ALLOWED_ORIGINS'): raise RuntimeError('Set SUPPLIERTRUST_ALLOWED_ORIGINS to the exact Vercel demo origin before starting SupplierTrust on Render.')
+app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=['GET','POST','PUT','DELETE'], allow_headers=['Content-Type'])
+demo_requests=deque()
+OFAC_HOSTS={'sanctionslistservice.ofac.treas.gov','wc2h-sls-prod-public-published.s3.us-gov-west-1.amazonaws.com'}
+
+class OfacRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self,req,fp,code,msg,headers,newurl):
+        target=urlsplit(newurl)
+        if target.scheme!='https' or target.hostname not in OFAC_HOSTS:
+            raise urllib.error.HTTPError(newurl,code,'OFAC redirect host rejected',headers,fp)
+        return super().redirect_request(req,fp,code,msg,headers,newurl)
+
+def secure_response(response,request):
+    response.headers['X-Content-Type-Options']='nosniff'
+    response.headers['X-Frame-Options']='DENY'
+    response.headers['Referrer-Policy']='strict-origin-when-cross-origin'
+    response.headers['Permissions-Policy']='camera=(), microphone=(), geolocation=()'
+    response.headers['Cache-Control']='no-store'
+    response.headers['Content-Security-Policy']="default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+    if request.url.scheme=='https': response.headers['Strict-Transport-Security']='max-age=31536000; includeSubDomains'
+    return response
+
+@app.middleware('http')
+async def security_boundary(request, call_next):
+    try: content_length=int(request.headers.get('content-length','0') or 0)
+    except ValueError: return secure_response(PlainTextResponse('Invalid content length',status_code=400),request)
+    if content_length>6*1024*1024: return secure_response(PlainTextResponse('Request is too large',status_code=413),request)
+    if demo_mode:
+        if request.method!='GET' or request.url.path not in ('/healthz','/api/demo/suppliers','/api/demo/screening/status') and not re.fullmatch(r'/api/demo/suppliers/\d+(?:/report)?',request.url.path):
+            return secure_response(PlainTextResponse('Public demonstration is read-only and contains fictional sample data.',status_code=403),request)
+        now=time.monotonic()
+        while demo_requests and demo_requests[0] < now-60: demo_requests.popleft()
+        if len(demo_requests)>=120: return secure_response(PlainTextResponse('Demo request limit reached; retry shortly.',status_code=429),request)
+        demo_requests.append(now)
+    response=await call_next(request)
+    return secure_response(response,request)
 
 def connection():
     conn=engine.connect()
     if conn.dialect.name=='sqlite': conn.exec_driver_sql('PRAGMA foreign_keys=ON')
     return Database(conn)
+
+def demo_record():
+    return {'id':1,'name':'Northstar Components Ltd. (Fictional)','country':'India','category':'Manufacturing','identifier':'27AAPFU0939F1ZV','identifier_status':'GSTIN checksum valid','contact':'demo@example.com','website':'https://example.com','created_at':'2026-01-12','evidence':[{'id':1,'source_url':'https://example.com/verification','reviewer':'Demo analyst','verified_on':'2026-01-14','status':'verified','notes':'Fictional example verification record.'}],'documents':[],'performance':[{'id':1,'observed_on':'2026-01-15','on_time_rate':0.78,'defect_rate':0.12,'source_url':'https://example.com/performance.csv','reviewer':'Demo analyst','notes':'Fictional example observation.'}],'audit':[{'id':3,'occurred_at':'2026-01-15T10:30:00+00:00','actor':'Demo analyst','action':'performance_observed','detail':'Fictional delivery observation recorded.'},{'id':2,'occurred_at':'2026-01-14T10:30:00+00:00','actor':'Demo analyst','action':'evidence_recorded','detail':'Fictional verification evidence recorded.'},{'id':1,'occurred_at':'2026-01-12T10:30:00+00:00','actor':'Demo analyst','action':'supplier_created','detail':'Fictional sample supplier.'}],'screening':{'id':1,'checked_at':'2026-01-15T10:30:00+00:00','candidate':'Fictional screening fixture — not an official list entry','similarity':0.84,'decision':'pending','reviewer':'','note':'','source':'Synthetic demo fixture','source_ref':'DEMO-ONLY'},'risk':{'score':60,'coverage':100,'confidence':'Limited','review_status':'Review required','factors':[{'label':'Synthetic match fixture awaiting review','points':30,'basis':'Synthetic demo fixture only. This is not an official sanctions result.'},{'label':'Low recorded on-time delivery rate','points':15,'basis':'78% in a fictional example observation. Source: https://example.com/performance.csv'},{'label':'Elevated recorded defect rate','points':15,'basis':'12% in a fictional example observation. Source: https://example.com/performance.csv'}]}}
+
+@app.get('/healthz')
+def health():
+    try:
+        with engine.connect() as db: db.execute(text('SELECT 1'))
+        return {'status':'ok'}
+    except Exception: raise HTTPException(503,'Database unavailable')
+
+@app.get('/api/demo/suppliers')
+def demo_suppliers(): return [demo_record()]
+
+@app.get('/api/demo/suppliers/{sid}')
+def demo_supplier(sid:int):
+    if sid!=1: raise HTTPException(404,'Demo record not found')
+    return demo_record()
+
+@app.get('/api/demo/screening/status')
+def demo_screening_status(): return {'status':'demo_fixture','source':'Synthetic demo fixture','retrieved_at':None,'sha256':None}
+
+@app.get('/api/demo/suppliers/{sid}/report',response_class=PlainTextResponse)
+def demo_report(sid:int):
+    if sid!=1: raise HTTPException(404,'Demo record not found')
+    s=demo_record()
+    lines=['SUPPLIERTRUST — FICTIONAL DEMONSTRATION REPORT','Demo data only; no live screening was performed.',f"Supplier: {s['name']}",f"Risk indicator index: {s['risk']['score']}/100",'','RISK INDICATORS']
+    lines += [f"- {f['label']} (+{f['points']}): {f['basis']}" for f in s['risk']['factors']]
+    lines += ['','This report is fictional and is not a compliance or identity determination.']
+    return PlainTextResponse('\n'.join(lines),headers={'Content-Disposition':'attachment; filename="supplier-demo-report.txt"'})
 
 class Result:
     def __init__(self,result,lastrowid=None): self.result=result; self.lastrowid=lastrowid
@@ -54,11 +127,13 @@ class Database:
 def init():
     if engine.dialect.name!='sqlite': return  # PostgreSQL schema is managed by Alembic.
     with connection() as db:
-        db.executescript('''CREATE TABLE IF NOT EXISTS suppliers (id INTEGER PRIMARY KEY, name TEXT NOT NULL, country TEXT NOT NULL, category TEXT NOT NULL, identifier TEXT NOT NULL DEFAULT '', contact TEXT NOT NULL DEFAULT '', website TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS evidence (id INTEGER PRIMARY KEY, supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE, source_url TEXT NOT NULL, reviewer TEXT NOT NULL, verified_on TEXT NOT NULL, status TEXT NOT NULL, notes TEXT NOT NULL); CREATE TABLE IF NOT EXISTS screenings (id INTEGER PRIMARY KEY, supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE, checked_at TEXT NOT NULL, candidate TEXT NOT NULL, similarity REAL NOT NULL, decision TEXT NOT NULL DEFAULT 'pending', reviewer TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'synthetic', source_ref TEXT NOT NULL DEFAULT ''); CREATE TABLE IF NOT EXISTS documents (id INTEGER PRIMARY KEY, supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE, filename TEXT NOT NULL, stored_name TEXT NOT NULL, uploaded_at TEXT NOT NULL, extracted_name TEXT NOT NULL DEFAULT '', extracted_identifier TEXT NOT NULL DEFAULT '', extraction_status TEXT NOT NULL, discrepancies TEXT NOT NULL DEFAULT '[]'); CREATE TABLE IF NOT EXISTS ofac_snapshot (id INTEGER PRIMARY KEY CHECK(id=1), retrieved_at TEXT NOT NULL, sha256 TEXT NOT NULL, records TEXT NOT NULL); CREATE TABLE IF NOT EXISTS performance (id INTEGER PRIMARY KEY, supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE, observed_on TEXT NOT NULL, on_time_rate REAL NOT NULL, defect_rate REAL NOT NULL, source_url TEXT NOT NULL, reviewer TEXT NOT NULL, notes TEXT NOT NULL); CREATE TABLE IF NOT EXISTS audit_events (id INTEGER PRIMARY KEY, supplier_id INTEGER REFERENCES suppliers(id) ON DELETE SET NULL, occurred_at TEXT NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL, detail TEXT NOT NULL);''')
+        db.executescript('''CREATE TABLE IF NOT EXISTS suppliers (id INTEGER PRIMARY KEY, name TEXT NOT NULL, country TEXT NOT NULL, category TEXT NOT NULL, identifier TEXT NOT NULL DEFAULT '', contact TEXT NOT NULL DEFAULT '', website TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS evidence (id INTEGER PRIMARY KEY, supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE, source_url TEXT NOT NULL, reviewer TEXT NOT NULL, verified_on TEXT NOT NULL, status TEXT NOT NULL, notes TEXT NOT NULL); CREATE TABLE IF NOT EXISTS screenings (id INTEGER PRIMARY KEY, supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE, checked_at TEXT NOT NULL, candidate TEXT NOT NULL, similarity REAL NOT NULL, decision TEXT NOT NULL DEFAULT 'pending', reviewer TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'synthetic', source_ref TEXT NOT NULL DEFAULT ''); CREATE TABLE IF NOT EXISTS documents (id INTEGER PRIMARY KEY, supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE, filename TEXT NOT NULL, stored_name TEXT NOT NULL, uploaded_at TEXT NOT NULL, extracted_name TEXT NOT NULL DEFAULT '', extracted_identifier TEXT NOT NULL DEFAULT '', extraction_status TEXT NOT NULL, discrepancies TEXT NOT NULL DEFAULT '[]'); CREATE TABLE IF NOT EXISTS ofac_snapshot (id INTEGER PRIMARY KEY CHECK(id=1), retrieved_at TEXT NOT NULL, sha256 TEXT NOT NULL, records TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'OFAC SDN'); CREATE TABLE IF NOT EXISTS performance (id INTEGER PRIMARY KEY, supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE, observed_on TEXT NOT NULL, on_time_rate REAL NOT NULL, defect_rate REAL NOT NULL, source_url TEXT NOT NULL, reviewer TEXT NOT NULL, notes TEXT NOT NULL); CREATE TABLE IF NOT EXISTS audit_events (id INTEGER PRIMARY KEY, supplier_id INTEGER REFERENCES suppliers(id) ON DELETE SET NULL, occurred_at TEXT NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL, detail TEXT NOT NULL);''')
         if db.conn.dialect.name=='sqlite': cols={r['name'] for r in db.execute('PRAGMA table_info(screenings)')}
         else: cols={r['name'] for r in db.execute('SELECT column_name AS name FROM information_schema.columns WHERE table_name=?',('screenings',))}
         for col in ('source','source_ref'):
             if col not in cols: db.execute(f"ALTER TABLE screenings ADD COLUMN {col} TEXT NOT NULL DEFAULT '{'synthetic' if col=='source' else ''}'")
+        snapshot_cols={r['name'] for r in db.execute('PRAGMA table_info(ofac_snapshot)')}
+        if 'source' not in snapshot_cols: db.execute("ALTER TABLE ofac_snapshot ADD COLUMN source TEXT NOT NULL DEFAULT 'OFAC SDN'")
 init()
 
 class Supplier(BaseModel):
@@ -75,12 +150,21 @@ class Supplier(BaseModel):
         if len(value.strip()) < 2: raise ValueError('Must contain at least two non-space characters')
         return value.strip()
 
+def validate_source_url(value):
+    parts=urlsplit(value)
+    if parts.scheme not in ('http','https') or not parts.hostname or parts.username or parts.password or any(ord(c)<32 for c in value): raise ValueError('Source must be a valid HTTP(S) URL without embedded credentials')
+    return value
+
 class Evidence(BaseModel):
     source_url: str = Field(min_length=1, max_length=500)
     reviewer: str = Field(min_length=1, max_length=120)
     verified_on: date
     status: str
     notes: str = Field(min_length=1, max_length=2000)
+
+    @field_validator('source_url')
+    @classmethod
+    def valid_source_url(cls,value): return validate_source_url(value)
 
 class Decision(BaseModel):
     decision: str
@@ -95,12 +179,17 @@ class Performance(BaseModel):
     reviewer: str = Field(min_length=1,max_length=120)
     notes: str = Field(min_length=1,max_length=1000)
 
+    @field_validator('source_url')
+    @classmethod
+    def valid_source_url(cls,value): return validate_source_url(value)
+
 def normalize(s): return ' '.join(re.findall(r'[a-z0-9]+', unicodedata.normalize('NFKD', s).encode('ascii','ignore').decode().lower()))
 def parse_ofac_csv(raw):
     # OFAC's legacy SDN.CSV is headerless; column 0 is the SDN ID and column 1 the primary name.
     return [{'id':r[0].strip(),'name':r[1].strip()} for r in csv.reader(raw.decode('utf-8-sig').splitlines()) if len(r)>1 and r[0].strip() and r[1].strip()]
 def snapshot_fresh(retrieved_at):
-    return (datetime.now(timezone.utc)-datetime.fromisoformat(retrieved_at)).total_seconds() <= 7*86400
+    age=(datetime.now(timezone.utc)-datetime.fromisoformat(retrieved_at)).total_seconds()
+    return 0 <= age <= 7*86400
 def identifier_status(value):
     v=value.strip().upper()
     if not v: return 'Not provided'
@@ -127,8 +216,8 @@ def details(db, sid):
         doc['discrepancies']=json.loads(doc['discrepancies'])
     screen=db.execute('SELECT * FROM screenings WHERE supplier_id=? ORDER BY id DESC LIMIT 1',(sid,)).fetchone()
     screen=dict(screen) if screen else None
-    snapshot=db.execute('SELECT retrieved_at,sha256 FROM ofac_snapshot WHERE id=1').fetchone()
-    if screen and screen['source']=='OFAC SDN':
+    snapshot=db.execute('SELECT retrieved_at,sha256,source FROM ofac_snapshot WHERE id=1').fetchone()
+    if screen and snapshot and screen['source']==snapshot['source']:
         screen['source_snapshot_at']=snapshot['retrieved_at'] if snapshot else None
         screen['source_sha256']=snapshot['sha256'] if snapshot else None
     factors=[]
@@ -143,8 +232,8 @@ def details(db, sid):
         sources='; '.join(f"{x['observed_on']} {x['source_url']}" for x in performance)
         if avg_ontime<.8: factors.append({'label':'Low recorded on-time delivery rate','points':15,'basis':f'{avg_ontime:.0%} average across {len(performance)} reviewer-entered observations. Sources: {sources}'})
         if avg_defects>.1: factors.append({'label':'Elevated recorded defect rate','points':15,'basis':f'{avg_defects:.0%} average across {len(performance)} reviewer-entered observations. Sources: {sources}'})
-    if screen and screen['candidate'] and screen['decision']=='pending': factors.append({'label':'Potential sanctions name match awaiting review','points':30,'basis':f"{screen['source']} name similarity only; identity is unconfirmed. Source record: {screen['source_ref']}"})
-    if screen and screen['candidate'] and screen['decision']=='confirmed': factors.append({'label':'Potential match confirmed by reviewer','points':30,'basis':f"Human review required; source: {screen['source']} record {screen['source_ref']}"})
+    if screen and screen['candidate'] and screen['decision']=='pending': factors.append({'label':'Potential sanctions name match awaiting review' if screen['source']=='OFAC SDN' else 'Synthetic name-match fixture awaiting review','points':30,'basis':f"{screen['source']} name similarity only; identity is unconfirmed. Source record: {screen['source_ref']}"})
+    if screen and screen['candidate'] and screen['decision']=='confirmed': factors.append({'label':'Potential match confirmed by reviewer' if screen['source']=='OFAC SDN' else 'Synthetic fixture confirmed by reviewer','points':30,'basis':f"Human review required; source: {screen['source']} record {screen['source_ref']}"})
     coverage=round(100*(bool(s['identifier'])+bool(ev)+bool(screen))/3)
     return {**s,'identifier_status':identifier_status(s['identifier']),'evidence':ev,'documents':docs,'performance':performance,'audit':audit,'screening':screen,'risk':{'score':min(100,sum(x['points'] for x in factors)),'coverage':coverage,'confidence':'Limited' if coverage<100 else 'Moderate','factors':factors,'review_status':'Review required' if factors else 'No indicators recorded'}}
 
@@ -179,13 +268,12 @@ def update_supplier(sid:int,s:Supplier):
 @app.delete('/api/suppliers/{sid}')
 def delete_supplier(sid:int):
     with connection() as db:
-        get_supplier(db,sid); db.execute('DELETE FROM suppliers WHERE id=?',(sid,))
+        supplier=get_supplier(db,sid); audit(db,sid,'local analyst','supplier_deleted',supplier['name']); db.execute('DELETE FROM suppliers WHERE id=?',(sid,))
         return {'deleted':True}
 
 @app.post('/api/suppliers/{sid}/evidence')
 def add_evidence(sid:int,e:Evidence):
     if e.status not in ('verified','unverified','inconclusive'): raise HTTPException(422,'Invalid evidence status')
-    if not re.match(r'^https?://',e.source_url): raise HTTPException(422,'Source must be an HTTP(S) URL')
     with connection() as db:
         get_supplier(db,sid)
         db.execute('INSERT INTO evidence(supplier_id,source_url,reviewer,verified_on,status,notes) VALUES(?,?,?,?,?,?)',(sid,e.source_url,e.reviewer,e.verified_on.isoformat(),e.status,e.notes))
@@ -194,7 +282,6 @@ def add_evidence(sid:int,e:Evidence):
 
 @app.post('/api/suppliers/{sid}/performance')
 def add_performance(sid:int,p:Performance):
-    if not re.match(r'^https?://',p.source_url): raise HTTPException(422,'Source must be an HTTP(S) URL')
     with connection() as db:
         get_supplier(db,sid)
         db.execute('INSERT INTO performance(supplier_id,observed_on,on_time_rate,defect_rate,source_url,reviewer,notes) VALUES(?,?,?,?,?,?,?)',(sid,p.observed_on.isoformat(),p.on_time_rate,p.defect_rate,p.source_url,p.reviewer,p.notes))
@@ -206,16 +293,16 @@ def screen(sid:int):
     with connection() as db:
         s=get_supplier(db,sid)
         snapshot=db.execute('SELECT * FROM ofac_snapshot WHERE id=1').fetchone()
-        if not snapshot or not snapshot_fresh(snapshot['retrieved_at']): raise HTTPException(409,'OFAC data is missing or older than 7 days. Refresh it before screening.')
+        if not snapshot or not snapshot_fresh(snapshot['retrieved_at']): raise HTTPException(409,'Screening data is missing, future-dated, or older than 7 days. Refresh it before screening.')
         candidates=[]
         for record in json.loads(snapshot['records']):
             score=difflib.SequenceMatcher(None,normalize(s['name']),normalize(record['name'])).ratio()
             if score>=.80: candidates.append((score,record))
         candidates.sort(key=lambda x:x[0],reverse=True)
         for score,record in reversed(candidates[:10]):
-            db.execute('INSERT INTO screenings(supplier_id,checked_at,candidate,similarity,source,source_ref) VALUES(?,?,?,?,?,?)',(sid,datetime.now(timezone.utc).isoformat(),record['name'],score,'OFAC SDN',record['id']))
-        if not candidates: db.execute('INSERT INTO screenings(supplier_id,checked_at,candidate,similarity,source,source_ref) VALUES(?,?,?,?,?,?)',(sid,datetime.now(timezone.utc).isoformat(),'','0','OFAC SDN',''))
-        audit(db,sid,'local analyst','ofac_screening',f'{len(candidates)} potential candidate(s); snapshot {snapshot["retrieved_at"]}')
+            db.execute('INSERT INTO screenings(supplier_id,checked_at,candidate,similarity,source,source_ref) VALUES(?,?,?,?,?,?)',(sid,datetime.now(timezone.utc).isoformat(),record['name'],score,snapshot['source'],record['id']))
+        if not candidates: db.execute('INSERT INTO screenings(supplier_id,checked_at,candidate,similarity,source,source_ref) VALUES(?,?,?,?,?,?)',(sid,datetime.now(timezone.utc).isoformat(),'','0',snapshot['source'],''))
+        audit(db,sid,'local analyst','ofac_screening',f'{len(candidates)} potential candidate(s); {snapshot["source"]} snapshot {snapshot["retrieved_at"]}')
         return details(db,sid)
 
 @app.post('/api/screening/ofac/refresh')
@@ -223,8 +310,8 @@ def refresh_ofac():
     url='https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/SDN.CSV'
     request=urllib.request.Request(url,headers={'User-Agent':'SupplierTrust/1.0 (supplier screening dataset refresh)'})
     try:
-        with urllib.request.urlopen(request,timeout=30) as response:
-            if response.geturl().split('/')[2] not in ('sanctionslistservice.ofac.treas.gov','wc2h-sls-prod-public-published.s3.us-gov-west-1.amazonaws.com'): raise ValueError('Unexpected redirect host')
+        with urllib.request.build_opener(OfacRedirectHandler).open(request,timeout=30) as response:
+            if urlsplit(response.geturl()).hostname not in OFAC_HOSTS or urlsplit(response.geturl()).scheme!='https': raise ValueError('Unexpected redirect host')
             raw=response.read(15*1024*1024+1)
         if len(raw)>15*1024*1024: raise ValueError('Dataset is too large')
         records=parse_ofac_csv(raw)
@@ -232,14 +319,14 @@ def refresh_ofac():
     except Exception as e: raise HTTPException(503,f'OFAC dataset refresh failed; existing snapshot retained: {type(e).__name__}')
     digest=hashlib.sha256(raw).hexdigest(); retrieved=datetime.now(timezone.utc).isoformat()
     with connection() as db:
-        db.execute('INSERT INTO ofac_snapshot(id,retrieved_at,sha256,records) VALUES(1,?,?,?) ON CONFLICT(id) DO UPDATE SET retrieved_at=excluded.retrieved_at,sha256=excluded.sha256,records=excluded.records',(retrieved,digest,json.dumps(records)))
+        db.execute('INSERT INTO ofac_snapshot(id,retrieved_at,sha256,records,source) VALUES(1,?,?,?,?) ON CONFLICT(id) DO UPDATE SET retrieved_at=excluded.retrieved_at,sha256=excluded.sha256,records=excluded.records,source=excluded.source',(retrieved,digest,json.dumps(records),'OFAC SDN'))
     return {'source':'OFAC SDN','source_url':url,'retrieved_at':retrieved,'sha256':digest,'record_count':len(records)}
 
 @app.get('/api/screening/status')
 def screening_status():
     with connection() as db:
-        row=db.execute('SELECT retrieved_at,sha256 FROM ofac_snapshot WHERE id=1').fetchone()
-        return {'status':'available' if row else 'not_checked','source':'OFAC SDN','source_url':'https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/SDN.CSV','retrieved_at':row['retrieved_at'] if row else None,'sha256':row['sha256'] if row else None}
+        row=db.execute('SELECT retrieved_at,sha256,source FROM ofac_snapshot WHERE id=1').fetchone()
+        return {'status':'available' if row else 'not_checked','source':row['source'] if row else 'OFAC SDN','source_url':'https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/SDN.CSV' if not row or row['source']=='OFAC SDN' else None,'retrieved_at':row['retrieved_at'] if row else None,'sha256':row['sha256'] if row else None}
 
 @app.post('/api/suppliers/{sid}/documents')
 async def upload_document(sid: int, file: UploadFile = File(...)):
@@ -281,8 +368,12 @@ def decide(screen_id:int,d:Decision):
 @app.get('/api/suppliers/{sid}/report', response_class=PlainTextResponse)
 def report(sid:int):
     with connection() as db: s=details(db,sid)
+    screening='Not checked'
+    if s['screening']:
+        x=s['screening']; provenance=f" | Retrieved {x['source_snapshot_at']} | SHA-256 {x['source_sha256']}" if x.get('source_snapshot_at') else ''
+        screening=f"{x['source']}{provenance} | record {x['source_ref'] or 'none'} | {x['candidate'] or 'no candidate'} | decision {x['decision']} | reviewer {x['reviewer']} | rationale {x['note']}"
     lines=['SUPPLIERTRUST — DUE DILIGENCE REPORT',f"Generated: {date.today().isoformat()}",f"Supplier: {s['name']}",f"Country: {s['country']} | Category: {s['category']}",f"Identifier: {s['identifier'] or 'Not provided'} ({s['identifier_status']})",f"Risk index: {s['risk']['score']}/100 | Evidence coverage: {s['risk']['coverage']}% | Confidence: {s['risk']['confidence']}",f"Review status: {s['risk']['review_status']}",'','RISK INDICATORS']
     lines += [f"- {f['label']} (+{f['points']}): {f['basis']}" for f in s['risk']['factors']] or ['- No indicators recorded.']
     lines += ['','EVIDENCE']+[f"- {e['status']} | {e['verified_on']} | {e['reviewer']} | {e['source_url']} | {e['notes']}" for e in s['evidence']]
-    lines += ['',f"Screening: {'OFAC SDN snapshot '+str(s['screening'].get('source_snapshot_at'))+' | SHA-256 '+str(s['screening'].get('source_sha256'))+' | record '+s['screening']['source_ref']+' | '+(s['screening']['candidate'] or 'no candidate')+' | decision '+s['screening']['decision']+' | reviewer '+s['screening']['reviewer']+' | rationale '+s['screening']['note'] if s['screening'] and s['screening']['source']=='OFAC SDN' else 'Not checked'}",'A potential name match is not proof of identity or wrongdoing; analyst review is required.','Identifier format validation does not establish registration or active status.','Follow-up: independently verify registration and review supporting documents.','This index is not a probability of fraud or regulatory certification.']
+    lines += ['',f'Screening: {screening}','A potential name match is not proof of identity or wrongdoing; analyst review is required.','Identifier format validation does not establish registration or active status.','Follow-up: independently verify registration and review supporting documents.','This index is not a probability of fraud or regulatory certification.']
     return PlainTextResponse('\n'.join(lines),headers={'Content-Disposition':f'attachment; filename="supplier-{sid}-report.txt"'})

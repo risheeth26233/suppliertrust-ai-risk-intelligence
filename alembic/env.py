@@ -2,7 +2,10 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 import os
 config=context.config
-if os.getenv('DATABASE_URL'): config.set_main_option('sqlalchemy.url', os.environ['DATABASE_URL'].replace('%','%%'))
+if os.getenv('DATABASE_URL'):
+    url=os.environ['DATABASE_URL']
+    if url.startswith(('postgres://','postgresql://')): url='postgresql+psycopg://'+url.split('://',1)[1]
+    config.set_main_option('sqlalchemy.url',url.replace('%','%%'))
 def run_migrations_offline():
     context.configure(url=config.get_main_option('sqlalchemy.url'),literal_binds=True,compare_type=True)
     with context.begin_transaction(): context.run_migrations()
