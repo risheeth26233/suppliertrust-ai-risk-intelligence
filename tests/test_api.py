@@ -1,7 +1,8 @@
 import os, tempfile
 os.environ['SUPPLIERTRUST_DB'] = os.path.join(tempfile.mkdtemp(), 'test.db')
 from fastapi.testclient import TestClient
-from backend.main import app, identifier_status, normalize, connection
+from backend.main import app, identifier_status, normalize, connection, parse_ofac_csv, snapshot_fresh
+from datetime import datetime, timezone
 client=TestClient(app)
 
 def test_workflow():
@@ -12,10 +13,10 @@ def test_workflow():
     data['category']='Services'; assert client.put(f'/api/suppliers/{sid}',json=data).json()['category']=='Services'
     e={'source_url':'https://example.com','reviewer':'Analyst','verified_on':'2026-01-01','status':'verified','notes':'Synthetic evidence'}
     assert client.post(f'/api/suppliers/{sid}/evidence',json=e).json()['risk']['score']==15
-    with connection() as db: db.execute('INSERT OR REPLACE INTO ofac_snapshot(id,retrieved_at,sha256,records) VALUES(1,?,?,?)',('2026-01-01T00:00:00+00:00','test-hash','[{"id":"TEST-1","name":"Fictional Example Trading Co"}]'))
+    with connection() as db: db.execute('INSERT OR REPLACE INTO ofac_snapshot(id,retrieved_at,sha256,records) VALUES(1,?,?,?)',(datetime.now(timezone.utc).isoformat(),'test-hash','[{"id":"TEST-1","name":"Fictional Example Trading Co"}]'))
     s=client.post(f'/api/suppliers/{sid}/screen').json(); assert s['screening']['candidate'] and s['screening']['source']=='OFAC SDN' and s['risk']['score']==45
     s=client.post(f"/api/screenings/{s['screening']['id']}/decision",json={'decision':'false_positive','reviewer':'Analyst','note':'Different entity'}).json(); assert s['risk']['score']==15
-    report=client.get(f'/api/suppliers/{sid}/report'); assert 'Synthetic fixture' in report.text and 'https://example.com' in report.text
+    report=client.get(f'/api/suppliers/{sid}/report'); assert 'OFAC SDN snapshot' in report.text and 'https://example.com' in report.text
     assert client.delete(f'/api/suppliers/{sid}').status_code==200
     assert client.get(f'/api/suppliers/{sid}').status_code==404
 
@@ -47,3 +48,10 @@ def test_pdf_intake_limits_and_private_storage(tmp_path, monkeypatch):
     assert list((tmp_path/'private').glob('*.pdf'))
     too_large=client.post(f'/api/suppliers/{sid}/documents',files={'file':('big.pdf',b'%PDF-'+b'0'*(5*1024*1024),'application/pdf')})
     assert too_large.status_code==413
+
+
+def test_ofac_csv_is_headerless_and_snapshot_expiry():
+    rows=parse_ofac_csv(b'36,Fictional Entity,-0-,CUBA\n37,Second Entity,-0-,OTHER')
+    assert rows==[{'id':'36','name':'Fictional Entity'},{'id':'37','name':'Second Entity'}]
+    assert snapshot_fresh(datetime.now(timezone.utc).isoformat())
+    assert not snapshot_fresh('2020-01-01T00:00:00+00:00')

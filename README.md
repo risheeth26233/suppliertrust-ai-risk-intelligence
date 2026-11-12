@@ -32,3 +32,5 @@ The score adds 20 when no manually verified evidence is recorded, 15 for an unre
 ## Verification
 
 `python -m pytest` runs the API suite. `npm run build` builds the frontend. CI is configured in `.github/workflows/ci.yml`, but has not yet been observed on GitHub. See `PROJECT_STATUS.md` for actual local test results and outstanding work.
+
+OFAC screening: use the user-triggered refresh button to download the official SDN CSV. Refresh sends a User-Agent, validates the redirected host and dataset size, parses the headerless legacy CSV, stores the retrieval timestamp and digest, and retains the prior snapshot if refresh fails. Screening refuses data older than seven days, ranks likely name candidates, and leaves decisions for a reviewer. This covers OFAC SDN only; it is not a comprehensive sanctions-screening service.

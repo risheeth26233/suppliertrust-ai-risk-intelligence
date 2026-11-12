@@ -59,6 +59,11 @@ class Decision(BaseModel):
     note: str = Field(min_length=1, max_length=1000)
 
 def normalize(s): return ' '.join(re.findall(r'[a-z0-9]+', unicodedata.normalize('NFKD', s).encode('ascii','ignore').decode().lower()))
+def parse_ofac_csv(raw):
+    # OFAC's legacy SDN.CSV is headerless; column 0 is the SDN ID and column 1 the primary name.
+    return [{'id':r[0].strip(),'name':r[1].strip()} for r in csv.reader(raw.decode('utf-8-sig').splitlines()) if len(r)>1 and r[0].strip() and r[1].strip()]
+def snapshot_fresh(retrieved_at):
+    return (datetime.now(timezone.utc)-datetime.fromisoformat(retrieved_at)).total_seconds() <= 7*86400
 def identifier_status(value):
     v=value.strip().upper()
     if not v: return 'Not provided'
@@ -83,6 +88,10 @@ def details(db, sid):
         doc['discrepancies']=json.loads(doc['discrepancies'])
     screen=db.execute('SELECT * FROM screenings WHERE supplier_id=? ORDER BY id DESC LIMIT 1',(sid,)).fetchone()
     screen=dict(screen) if screen else None
+    snapshot=db.execute('SELECT retrieved_at,sha256 FROM ofac_snapshot WHERE id=1').fetchone()
+    if screen and screen['source']=='OFAC SDN':
+        screen['source_snapshot_at']=snapshot['retrieved_at'] if snapshot else None
+        screen['source_sha256']=snapshot['sha256'] if snapshot else None
     factors=[]
     if not any(e['status']=='verified' for e in ev): factors.append({'label':'No manually verified evidence recorded','points':20,'basis':'Missing verification; not an adverse finding.'})
     if identifier_status(s['identifier']) in ('GSTIN checksum invalid','Format not recognized'): factors.append({'label':'Identifier requires review','points':15,'basis':identifier_status(s['identifier'])})
@@ -137,13 +146,13 @@ def screen(sid:int):
     with connection() as db:
         s=get_supplier(db,sid)
         snapshot=db.execute('SELECT * FROM ofac_snapshot WHERE id=1').fetchone()
-        if not snapshot: raise HTTPException(409,'OFAC data has not been refreshed. Screening is not checked.')
+        if not snapshot or not snapshot_fresh(snapshot['retrieved_at']): raise HTTPException(409,'OFAC data is missing or older than 7 days. Refresh it before screening.')
         candidates=[]
         for record in json.loads(snapshot['records']):
             score=difflib.SequenceMatcher(None,normalize(s['name']),normalize(record['name'])).ratio()
             if score>=.80: candidates.append((score,record))
         candidates.sort(key=lambda x:x[0],reverse=True)
-        for score,record in candidates[:10]:
+        for score,record in reversed(candidates[:10]):
             db.execute('INSERT INTO screenings(supplier_id,checked_at,candidate,similarity,source,source_ref) VALUES(?,?,?,?,?,?)',(sid,datetime.now(timezone.utc).isoformat(),record['name'],score,'OFAC SDN',record['id']))
         if not candidates: db.execute('INSERT INTO screenings(supplier_id,checked_at,candidate,similarity,source,source_ref) VALUES(?,?,?,?,?,?)',(sid,datetime.now(timezone.utc).isoformat(),'','0','OFAC SDN',''))
         return details(db,sid)
@@ -157,8 +166,7 @@ def refresh_ofac():
             if response.geturl().split('/')[2] not in ('sanctionslistservice.ofac.treas.gov','wc2h-sls-prod-public-published.s3.us-gov-west-1.amazonaws.com'): raise ValueError('Unexpected redirect host')
             raw=response.read(15*1024*1024+1)
         if len(raw)>15*1024*1024: raise ValueError('Dataset is too large')
-        rows=list(csv.reader(raw.decode('utf-8-sig').splitlines()))
-        records=[{'id':r[0],'name':r[1]} for r in rows[1:] if len(r)>1 and r[0].strip() and r[1].strip()]
+        records=parse_ofac_csv(raw)
         if len(records)<1000: raise ValueError('Downloaded dataset failed validation')
     except Exception as e: raise HTTPException(503,f'OFAC dataset refresh failed; existing snapshot retained: {type(e).__name__}')
     digest=hashlib.sha256(raw).hexdigest(); retrieved=datetime.now(timezone.utc).isoformat()
@@ -213,5 +221,5 @@ def report(sid:int):
     lines=['SUPPLIERTRUST — DUE DILIGENCE REPORT',f"Generated: {date.today().isoformat()}",f"Supplier: {s['name']}",f"Country: {s['country']} | Category: {s['category']}",f"Identifier: {s['identifier'] or 'Not provided'} ({s['identifier_status']})",f"Risk index: {s['risk']['score']}/100 | Evidence coverage: {s['risk']['coverage']}% | Confidence: {s['risk']['confidence']}",f"Review status: {s['risk']['review_status']}",'','RISK INDICATORS']
     lines += [f"- {f['label']} (+{f['points']}): {f['basis']}" for f in s['risk']['factors']] or ['- No indicators recorded.']
     lines += ['','EVIDENCE']+[f"- {e['status']} | {e['verified_on']} | {e['reviewer']} | {e['source_url']} | {e['notes']}" for e in s['evidence']]
-    lines += ['',f"Screening: {'Synthetic fixture checked: '+(s['screening']['candidate'] or 'no candidate')+' | decision: '+s['screening']['decision']+' | reviewer: '+s['screening']['reviewer']+' | rationale: '+s['screening']['note'] if s['screening'] else 'Not checked'}",'Live sanctions sources: Not checked. Fixture matches are not real sanctions findings.','Identifier format validation does not establish registration or active status.','Follow-up: independently verify registration and screen official sources; review supporting documents.','This index is not a probability of fraud or regulatory certification.']
+    lines += ['',f"Screening: {'OFAC SDN snapshot '+str(s['screening'].get('source_snapshot_at'))+' | SHA-256 '+str(s['screening'].get('source_sha256'))+' | record '+s['screening']['source_ref']+' | '+(s['screening']['candidate'] or 'no candidate')+' | decision '+s['screening']['decision']+' | reviewer '+s['screening']['reviewer']+' | rationale '+s['screening']['note'] if s['screening'] and s['screening']['source']=='OFAC SDN' else 'Not checked'}",'A potential name match is not proof of identity or wrongdoing; analyst review is required.','Identifier format validation does not establish registration or active status.','Follow-up: independently verify registration and review supporting documents.','This index is not a probability of fraud or regulatory certification.']
     return PlainTextResponse('\n'.join(lines),headers={'Content-Disposition':f'attachment; filename="supplier-{sid}-report.txt"'})
