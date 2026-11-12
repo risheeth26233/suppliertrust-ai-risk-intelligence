@@ -13,7 +13,7 @@ The prepared public showcase is read-only and serves a fixed fictional scenario.
 - Vite production build: passed.
 - Playwright desktop and mobile workflow in installed Microsoft Edge: passed. It exercised supplier creation/edit/search/deletion, evidence, synthetic screening and review, performance observation, activity, report download, read-only demo controls, JavaScript errors, and mobile overflow. Screenshots are captured under the ignored `output/playwright/` directory.
 - Render Blueprint and Vercel JSON parse successfully; provider-specific configuration was cross-checked against current provider documentation.
-- PostgreSQL integration is configured in GitHub Actions using an ephemeral PostgreSQL service. Local verification used SQLite; the PostgreSQL-backed Actions result is pending for the current push.
+- PostgreSQL integration is configured in GitHub Actions using an ephemeral PostgreSQL service. The workflow passed for commit `b7ad81c` (API tests, migrations, frontend build, and Chromium browser workflow); local verification also passed against SQLite.
 - No hosted deployment or hosted smoke test was performed.
 
 ## Known limits
