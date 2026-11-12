@@ -1,33 +1,62 @@
-import os, sqlite3, re, json, difflib, unicodedata, uuid, csv, hashlib, urllib.request
+import os, re, json, difflib, unicodedata, uuid, csv, hashlib, urllib.request
 from io import BytesIO
 from pathlib import Path
 from datetime import date, datetime, timezone
-from contextlib import contextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from fastapi import UploadFile, File
 from pypdf import PdfReader
 from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import create_engine, text, inspect
 
-DB = os.getenv('SUPPLIERTRUST_DB', 'suppliertrust.db')
+database_url=os.getenv('DATABASE_URL')
+if database_url and database_url.startswith(('postgres://','postgresql://')): database_url='postgresql+psycopg://'+database_url.split('://',1)[1]
+if not database_url: database_url='sqlite:///'+os.path.abspath(os.getenv('SUPPLIERTRUST_DB','suppliertrust.db')).replace('\\','/')
+engine=create_engine(database_url,connect_args={'check_same_thread':False} if database_url.startswith('sqlite') else {},pool_pre_ping=True)
 app = FastAPI(title='SupplierTrust', version='0.1.0')
 app.add_middleware(CORSMiddleware, allow_origins=['http://localhost:5173','http://127.0.0.1:5173'], allow_methods=['*'], allow_headers=['*'])
 
-@contextmanager
 def connection():
-    db = sqlite3.connect(DB)
-    db.row_factory = sqlite3.Row
-    db.execute('PRAGMA foreign_keys=ON')
-    try:
-        yield db
-        db.commit()
-    finally: db.close()
+    conn=engine.connect()
+    if conn.dialect.name=='sqlite': conn.exec_driver_sql('PRAGMA foreign_keys=ON')
+    return Database(conn)
+
+class Result:
+    def __init__(self,result,lastrowid=None): self.result=result; self.lastrowid=lastrowid
+    def fetchone(self): return self.result.mappings().fetchone()
+    def fetchall(self): return self.result.mappings().fetchall()
+    def __iter__(self): return iter(self.result.mappings())
+
+class Database:
+    def __init__(self,conn): self.conn=conn; self.tx=conn.get_transaction() or conn.begin()
+    def __enter__(self): return self
+    def __exit__(self,kind,value,tb):
+        self.tx.commit() if kind is None else self.tx.rollback()
+        self.conn.close()
+    def execute(self,sql,params=()):
+        if sql.startswith('PRAGMA table_info('):
+            return Result(self.conn.exec_driver_sql(sql))
+        names=re.findall(r'\?',sql); values={f'p{i}':v for i,v in enumerate(params)}
+        for i in range(len(names)): sql=sql.replace('?',f':p{i}',1)
+        returns=sql.lstrip().lower().startswith('insert into suppliers')
+        if returns and 'returning' not in sql.lower(): sql+=' RETURNING id'
+        result=self.conn.execute(text(sql),values)
+        inserted=result.scalar_one() if returns else None
+        return Result(result,inserted)
+    def executescript(self,script):
+        for statement in script.split(';'):
+            statement=statement.strip()
+            if not statement: continue
+            if self.conn.dialect.name=='postgresql': statement=re.sub(r'INTEGER PRIMARY KEY','SERIAL PRIMARY KEY',statement,flags=re.I)
+            self.conn.execute(text(statement))
 
 def init():
+    if engine.dialect.name!='sqlite': return  # PostgreSQL schema is managed by Alembic.
     with connection() as db:
         db.executescript('''CREATE TABLE IF NOT EXISTS suppliers (id INTEGER PRIMARY KEY, name TEXT NOT NULL, country TEXT NOT NULL, category TEXT NOT NULL, identifier TEXT NOT NULL DEFAULT '', contact TEXT NOT NULL DEFAULT '', website TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL); CREATE TABLE IF NOT EXISTS evidence (id INTEGER PRIMARY KEY, supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE, source_url TEXT NOT NULL, reviewer TEXT NOT NULL, verified_on TEXT NOT NULL, status TEXT NOT NULL, notes TEXT NOT NULL); CREATE TABLE IF NOT EXISTS screenings (id INTEGER PRIMARY KEY, supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE, checked_at TEXT NOT NULL, candidate TEXT NOT NULL, similarity REAL NOT NULL, decision TEXT NOT NULL DEFAULT 'pending', reviewer TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'synthetic', source_ref TEXT NOT NULL DEFAULT ''); CREATE TABLE IF NOT EXISTS documents (id INTEGER PRIMARY KEY, supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE, filename TEXT NOT NULL, stored_name TEXT NOT NULL, uploaded_at TEXT NOT NULL, extracted_name TEXT NOT NULL DEFAULT '', extracted_identifier TEXT NOT NULL DEFAULT '', extraction_status TEXT NOT NULL, discrepancies TEXT NOT NULL DEFAULT '[]'); CREATE TABLE IF NOT EXISTS ofac_snapshot (id INTEGER PRIMARY KEY CHECK(id=1), retrieved_at TEXT NOT NULL, sha256 TEXT NOT NULL, records TEXT NOT NULL);''')
-        cols={r['name'] for r in db.execute('PRAGMA table_info(screenings)')}
+        if db.conn.dialect.name=='sqlite': cols={r['name'] for r in db.execute('PRAGMA table_info(screenings)')}
+        else: cols={r['name'] for r in db.execute('SELECT column_name AS name FROM information_schema.columns WHERE table_name=?',('screenings',))}
         for col in ('source','source_ref'):
             if col not in cols: db.execute(f"ALTER TABLE screenings ADD COLUMN {col} TEXT NOT NULL DEFAULT '{'synthetic' if col=='source' else ''}'")
 init()
