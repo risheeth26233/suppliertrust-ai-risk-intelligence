@@ -27,6 +27,8 @@ VITE_API_URL=https://suppliertrust-api-hp5b.onrender.com
 
 `SUPPLIERTRUST_ALLOWED_ORIGINS` is the exact Vercel production origin. No preview origins or wildcard origins are allowed. The CSP allows API requests only to the deployed Render service.
 
+The production frontend is deployed from the authenticated Vercel CLI. Render tracks `main` and deploys on pushes; the Vercel project is not currently connected for automatic Git-based deployment, so frontend changes require a Vercel CLI production deploy after CI passes.
+
 ## Hosted smoke check
 
 Hosted checks:
@@ -36,6 +38,6 @@ Hosted checks:
 3. `POST /api/suppliers`, `POST /api/demo/suppliers`, `POST /api/screening/ofac/refresh`, document upload, decisions, and legacy `/api/suppliers` reads return `403`.
 4. CORS preflight succeeds for GET on allowlisted demo routes from the exact Vercel production origin. Write preflights and origins outside the allowlist are rejected.
 5. The frontend shows the read-only fictional-demo banner, and response headers include CSP, HSTS, no-store, nosniff, frame denial, and restricted permissions.
-6. Browser verification of supplier loading, report download, mobile layout, and console errors is being repeated after the CORS preflight fix is deployed.
+6. After the favicon fix, the browser check passed: the site icon loaded, the fictional profile/evidence/screening rendered, report download worked, desktop/mobile layouts had no horizontal overflow, and there were no failed requests or console errors.
 
 Local development remains writable and uses SQLite by default. Do not connect the public site to the local-development API mode. Enabling public writes requires authentication, tenant isolation, ownership-scoped queries, upload isolation, and a separate security review; those are not part of this read-only demo.

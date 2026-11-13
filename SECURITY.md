@@ -1,5 +1,17 @@
-# Security
+# Security and data boundaries
 
-Local-only prototype: there is no authentication, authorization, audit trail or per-user isolation. Do not expose it to a network or enter sensitive supplier data. It does not fetch arbitrary evidence URLs and does not accept uploads. Input uses Pydantic validation and SQL queries are parameterized. Source links are user-supplied assertions and should be checked independently. Never commit credentials, private data or the SQLite database.
+## Public demo
 
-PDF files are checked by extension, declared MIME type, signature and size, then parsed in-process for up to 20 pages / 100,000 characters. Store directory is local and private; there is no document download route. This limits exposure but is not a hardened malware sandbox. Use trusted fictional PDFs only in this prototype.
+The deployed demo displays one fixed fictional supplier and synthetic evidence/screening data. It does not read supplier records from Neon. In demo mode, the backend serves only an explicit GET route allowlist and a health check. It rejects writes, uploads, screening refreshes, reviewer decisions, and the regular supplier API. GET preflights are accepted only for allowlisted routes, from the exact Vercel origin, with the allowed `Content-Type` header. The API applies a request cap and returns security headers; the Vercel frontend CSP permits only its configured Render API host.
+
+The demo has no login because its data is public and fictional. Do not submit real supplier information, documents, or credentials.
+
+## Local application
+
+Local mode is a writable prototype and has no authentication, authorization, or per-user data isolation. Bind the API to localhost and use fictional records only. Never expose local mode to a public network or commit credentials, private data, or the SQLite database.
+
+PDF uploads are limited by extension, declared MIME type, signature, size, page count, and extracted text length. Parsing happens in-process and is not a hardened malware sandbox. Store files in the private local upload directory; there is no document download route. Treat documents as untrusted input.
+
+## Interpretation limits
+
+GSTIN/CIN checks validate format only. Evidence and delivery observations are reviewer-entered. PDF text extraction does not verify authenticity or OCR images. The synthetic public screening fixture is not sanctions data. Local OFAC name matches are candidates for human review and do not establish identity or wrongdoing. Risk scores are deterministic indicator indexes, not trained-AI results, fraud probabilities, or compliance decisions.

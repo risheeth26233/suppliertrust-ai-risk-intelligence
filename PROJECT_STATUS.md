@@ -14,16 +14,18 @@ The public showcase is read-only and serves a fixed fictional scenario. It denie
 - Playwright desktop and mobile workflow in installed Microsoft Edge: passed. It exercised supplier creation/edit/search/deletion, evidence, synthetic screening and review, performance observation, activity, report download, read-only demo controls, JavaScript errors, and mobile overflow. Screenshots are captured under the ignored `output/playwright/` directory.
 - Render Blueprint and Vercel JSON parse successfully; provider-specific configuration was cross-checked against current provider documentation.
 - PostgreSQL integration is configured in GitHub Actions using an ephemeral PostgreSQL service. The workflow passed for commit `b7ad81c` (API tests, migrations, frontend build, and Chromium browser workflow); local verification also passed against SQLite.
-- No hosted deployment or hosted smoke test was performed.
+- At the time of this local/CI verification record, hosted deployment had not yet been performed; hosted results are recorded below.
 
 ## Hosted deployment (2026-11-13)
 
 - Vercel frontend deployed on the Hobby tier with `VITE_DEMO_MODE=true` and the dedicated Render API URL.
 - Dedicated Render Hobby workspace; backend service is Free and uses the isolated Neon Free project. No payment method was added.
 - Render `/healthz` returned `{"status":"ok"}` after the PostgreSQL migration. The endpoint performs `SELECT 1`, confirming a working TLS PostgreSQL connection.
-- API checks returned the fictional supplier, evidence, synthetic screening fixture, and downloadable fictional report. Legacy/local supplier routes, writes, uploads, decisions, and live screening refresh returned 403. Exact-origin CORS and response security headers were checked.
-- Initial browser verification found that demo middleware blocked CORS preflight. A minimal backend fix now permits only GET preflights on the explicit demo read-route allowlist; all other preflights and write operations remain denied. This fix is pending push and Render auto-deploy, then the browser check must be repeated before considering hosted verification complete.
-- Vite production build passed after this change. The complete API pytest run did not finish in the local runner and was stopped; the preceding verified commit `fbb604f` has passing PostgreSQL, API, build, and Playwright CI.
+- API checks returned the fictional supplier, evidence, synthetic screening fixture, and downloadable fictional report. Legacy/local supplier routes, writes, uploads, decisions, and live screening refresh returned 403. Exact-origin CORS and response security headers were checked; GET preflight returned 200 while POST preflight returned 403.
+- The first browser check exposed blocked CORS preflight; a later sweep also found a missing favicon. GET-only preflight handling was deployed to Render, and the branded favicon plus demo-specific UI copy was deployed to Vercel.
+- The hosted browser check passed after those fixes: public page and API loaded, the fictional profile/risk/evidence/synthetic screening appeared, report download worked, and the favicon returned 200. Desktop (1440×1000) and mobile (390×844) had no horizontal overflow, with no write controls, failed requests, or console errors.
+- Neon connectivity was verified through `/healthz` (`SELECT 1`), and the isolated Neon project is on its Free plan with its migrated SupplierTrust schema. The public frontend bundle contains no database URL or credential material.
+- GitHub Actions passed for commit `2cae651` with PostgreSQL migrations, API tests, Vite build, and desktop/mobile Playwright. The final favicon/copy correction is covered by the same workflow; confirm its commit-specific result in the linked Actions run.
 
 ## Known limits
 

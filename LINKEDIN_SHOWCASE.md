@@ -1,7 +1,11 @@
-# Showcase copy (use after a verified demo deployment)
+# SupplierTrust — LinkedIn showcase
 
-SupplierTrust is an evidence-led supplier due-diligence prototype. The dashboard combines supplier details, reviewer-recorded evidence, performance observations, screening provenance, and transparent indicator factors. The risk index explains which recorded inputs need review; it is not a fraud probability or trained-AI prediction.
+**Live fictional demo:** https://suppliertrust-ai-risk-intelligence.vercel.app
 
-The hosted demo is read-only and uses fictional sample records. Local workflows cover supplier creation and editing, manual evidence, a separately labeled synthetic test fixture, reviewer decisions, performance entries, audit history, and report generation. GSTIN/CIN checks validate formatting only, documents receive text extraction rather than authenticity verification, and no company-registry or World Bank APIs are connected.
+SupplierTrust is an evidence-led supplier due-diligence prototype. Its dashboard brings supplier profiles, reviewer-recorded evidence, delivery observations, screening provenance, and explainable risk indicators together for a clearer human review.
 
-Replace this draft with the hosted URL and screenshots only after following DEPLOYMENT.md's smoke checks.
+The public showcase is read-only and contains one fictional supplier with synthetic evidence and screening examples. Its risk index is deterministic; it is not a trained-AI prediction, a fraud probability, or a compliance decision. No live sanctions screening occurs in the public demo.
+
+The local prototype includes supplier creation and editing, evidence records, PDF text extraction, cached OFAC SDN screening, reviewer decisions, delivery observations, audit history, and report downloads. GSTIN/CIN checks validate format only, and PDF extraction does not verify authenticity. No company registry or World Bank debarment API is connected.
+
+Hosted showcase verification: frontend/API communication, database health, sample profile/evidence/report, read-only controls, GET-only preflight behavior, desktop/mobile layout, and browser console checked on 2026-11-13. The site is portfolio-demo ready; describe its scope and limitations accurately when sharing.
