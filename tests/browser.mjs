@@ -55,6 +55,12 @@ try{
   await page.getByText('GSTIN checksum valid').waitFor();
   await page.screenshot({path:fileURLToPath(new URL('supplier-profile-desktop.png',out)),fullPage:true,animations:'disabled'});
 
+  await page.locator('.nav-link').filter({hasText:'Risk assessment'}).first().click();
+  await page.getByRole('heading',{level:1,name:'Risk assessment'}).waitFor();
+  assert.equal(await page.locator('.nav-link.selected').count(),1,'nested supplier pages must have one primary navigation selection');
+  assert.equal(await page.locator('.nav-link.parent').getAttribute('aria-current'),'location','Suppliers should be identified as a parent section, not another active page');
+  await page.screenshot({path:fileURLToPath(new URL('risk-assessment-desktop.png',out)),fullPage:true,animations:'disabled'});
+
   await page.locator('.nav-link').filter({hasText:'Evidence'}).first().click();
   await page.getByRole('heading',{level:1,name:'Evidence explorer'}).waitFor();
   await page.getByLabel('Source URL').fill('https://example.com/verification');
@@ -100,11 +106,25 @@ try{
   await page.locator('.nav-link').filter({hasText:'Overview'}).first().click();
   await page.getByRole('heading',{level:1,name:'Supplier intelligence, in focus.'}).waitFor();
   await page.screenshot({path:fileURLToPath(new URL('dashboard-desktop.png',out)),fullPage:true,animations:'disabled'});
-  for(const width of [375,390,768,1024,1280,1440,1920]){
-    await page.setViewportSize({width,height:width<=390?844:1000});
+  for(const width of [375,390,600,768,900,1024,1280,1440,1920]){
+    await page.setViewportSize({width,height:width<=390?844:width<=768?540:width<=900?680:1000});
     const layout=await page.evaluate(()=>({scroll:document.documentElement.scrollWidth,client:document.documentElement.clientWidth}));
     assert.ok(layout.scroll<=layout.client,`dashboard overflows horizontally at ${width}px (${layout.scroll}px)`);
-    if([375,768,1024,1280,1920].includes(width)) await page.screenshot({path:fileURLToPath(new URL(`dashboard-${width}.png`,out)),fullPage:true,animations:'disabled'});
+    await page.screenshot({path:fileURLToPath(new URL(`dashboard-${width}.png`,out)),fullPage:true,animations:'disabled'});
+    if(width===768){
+      await page.waitForFunction(()=>document.querySelector('.app-shell')?.classList.contains('nav-collapsed'));
+      const sidebar=page.locator('.sidebar');
+      const tabletGeometry=await sidebar.evaluate(el=>{const r=el.getBoundingClientRect();return {width:Math.round(r.width),left:Math.round(r.left),right:Math.round(r.right),transform:getComputedStyle(el).transform}});
+      assert.equal(tabletGeometry.width,72,'embedded tablet layout should use a compact icon rail');
+      assert.equal(tabletGeometry.left,0,'compact tablet navigation should remain visible at the left edge');
+      assert.equal(tabletGeometry.right,72,'compact tablet navigation should not slide outside the viewport');
+      assert.equal(await page.locator('.main-area').evaluate(el=>Math.round(el.getBoundingClientRect().left)),72,'tablet content should begin after the compact navigation rail');
+      assert.ok(await sidebar.locator('.nav-link svg').count()>0,'compact tablet navigation should retain its icon controls');
+      await page.getByRole('button',{name:'Toggle sidebar'}).click();
+      await page.waitForFunction(()=>Math.round(document.querySelector('.sidebar')?.getBoundingClientRect().width||0)===224);
+      assert.equal(await sidebar.evaluate(el=>Math.round(el.getBoundingClientRect().width)),224,'the compact navigation should expand on request');
+      await page.getByRole('button',{name:'Toggle sidebar'}).click();
+    }
   }
   await page.setViewportSize({width:1440,height:1000});
   await page.getByRole('button',{name:/Take product tour/}).click();
@@ -131,9 +151,31 @@ try{
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),'local mobile layout has horizontal overflow');
   await page.setViewportSize({width:375,height:812});
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),'local layout has horizontal overflow at 375px');
-  await page.getByRole('button',{name:'Open navigation'}).click();
-  await page.getByRole('button',{name:'About Evidence'}).click();
+  const mobileMenu=page.getByRole('button',{name:'Open navigation'});
+  await mobileMenu.click();
+  await page.locator('.sidebar.is-open').waitFor({state:'visible'});
+  assert.equal(await page.evaluate(()=>document.activeElement?.classList.contains('nav-link')),true,'opening the drawer should move focus into navigation');
+  assert.equal(await page.locator('.main-area').getAttribute('aria-hidden'),'true','the background must be unavailable while the drawer is open');
+  await page.keyboard.press('Escape');
+  await page.locator('.sidebar.is-open').waitFor({state:'hidden'});
+  assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),'Open navigation','Escape should restore focus to the menu trigger');
+  await mobileMenu.click();
+  await page.screenshot({path:fileURLToPath(new URL('mobile-navigation.png',out)),animations:'disabled'});
+  await page.getByRole('button',{name:/About Evidence:/}).click();
   await page.getByRole('tooltip').filter({hasText:'Inspect reviewer-entered sources'}).waitFor();
+  await page.locator('.drawer-scrim').click({position:{x:350,y:300}});
+  await page.locator('.sidebar.is-open').waitFor({state:'hidden'});
+  assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),'Open navigation','outside click should restore focus to the menu trigger');
+  await mobileMenu.click();
+  await page.locator('.nav-link').filter({hasText:'Evidence'}).first().click();
+  await page.getByRole('heading',{level:1,name:'Evidence explorer'}).waitFor();
+  await page.setViewportSize({width:375,height:812});
+  await page.getByRole('button',{name:'Open navigation'}).click();
+  await page.locator('.nav-link').filter({hasText:'Suppliers'}).first().click();
+  await page.getByRole('button',{name:/Add supplier/}).first().click();
+  const dialogBounds=await page.getByRole('dialog').evaluate(el=>{const r=el.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom}});
+  assert.ok(dialogBounds.left>=0&&dialogBounds.right<=375&&dialogBounds.top>=0&&dialogBounds.bottom<=812,'supplier form dialog must fit the mobile viewport');
+  await page.getByRole('button',{name:'Cancel'}).click();
 
   await page.setViewportSize({width:1440,height:1000});
   await page.goto(base,{waitUntil:'domcontentloaded'});
@@ -174,7 +216,7 @@ try{
   await demo.getByRole('button',{name:'Skip tour'}).click();
   await demo.getByRole('button',{name:'Open navigation'}).click();
   await demo.screenshot({path:fileURLToPath(new URL('mobile-navigation.png',out)),fullPage:false,animations:'disabled'});
-  await demo.getByRole('button',{name:'About Evidence'}).click();
+  await demo.getByRole('button',{name:/About Evidence:/}).click();
   await demo.getByRole('tooltip').filter({hasText:'Inspect reviewer-entered sources'}).waitFor();
   assert.deepEqual(demoErrors,[],'public demo reported uncaught JavaScript errors');
   assert.deepEqual(demoConsoleErrors,[],'public demo reported console errors');
