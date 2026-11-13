@@ -15,3 +15,5 @@
 .nav-info{display:none}@media(max-width:850px){.nav-info{display:grid}}
 .tour-card{z-index:72}
 .tour-scrim{z-index:auto;backdrop-filter:none}.tour-card{z-index:72}
+.tour-scrim{z-index:72;backdrop-filter:none}.tour-card{z-index:73}
+.tour-scrim{z-index:72;backdrop-filter:none}

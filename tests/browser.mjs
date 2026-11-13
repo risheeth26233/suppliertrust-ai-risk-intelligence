@@ -138,6 +138,13 @@ try{
   await demo.setViewportSize({width:375,height:812});
   await demo.screenshot({path:fileURLToPath(new URL('public-demo-mobile.png',out)),fullPage:true,animations:'disabled'});
   assert.ok(await demo.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),'public demo has horizontal overflow on mobile');
+  await demo.getByRole('button',{name:'Open product tour'}).click();
+  await demo.getByRole('dialog',{name:'Welcome to SupplierTrust'}).waitFor();
+  await demo.getByRole('button',{name:'Next',exact:true}).click();
+  await demo.getByRole('dialog',{name:'Start with what is recorded'}).waitFor();
+  await demo.getByRole('button',{name:'Next',exact:true}).click();
+  await demo.getByRole('dialog',{name:'Open a supplier investigation'}).waitFor();
+  await demo.getByRole('button',{name:'Skip tour'}).click();
   await demo.getByRole('button',{name:'Open navigation'}).click();
   await demo.getByRole('button',{name:'About Evidence'}).click();
   await demo.getByRole('tooltip').filter({hasText:'Inspect reviewer-entered sources'}).waitFor();
