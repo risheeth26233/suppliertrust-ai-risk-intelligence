@@ -14,3 +14,4 @@
 .screen-factor{display:grid;gap:4px;margin:10px 0;padding:10px;border:1px solid #e8edf1;border-radius:7px;background:#fafbfd}.screen-factor>b{color:#8290a0;font-size:7px;text-transform:uppercase;letter-spacing:.6px}.screen-factor>strong{color:#4b6076;font-size:9px}.screen-factor>small{color:#8290a0;font-size:8px;line-height:1.5}.screen-factor .text-link{padding:0}
 .nav-info{display:none}@media(max-width:850px){.nav-info{display:grid}}
 .tour-card{z-index:72}
+.tour-scrim{z-index:auto;backdrop-filter:none}.tour-card{z-index:72}
