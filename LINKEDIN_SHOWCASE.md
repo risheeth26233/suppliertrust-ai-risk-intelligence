@@ -1,7 +1,6 @@
 # SupplierTrust — LinkedIn showcase
 
-**Live fictional demo:** [suppliertrust-ai-risk-intelligence.vercel.app](https://suppliertrust-ai-risk-intelligence.vercel.app)  
-**Source:** [GitHub repository](https://github.com/risheeth26233/suppliertrust-ai-risk-intelligence)
+**Live fictional demo:** [suppliertrust-ai-risk-intelligence.vercel.app](https://suppliertrust-ai-risk-intelligence.vercel.app) · **Source:** [GitHub repository](https://github.com/risheeth26233/suppliertrust-ai-risk-intelligence)
 
 SupplierTrust is an evidence-led supplier due-diligence prototype. Its responsive command center connects supplier profiles, reviewer-recorded evidence, delivery observations, screening provenance, and explainable risk indicators for a clearer human review. Section guidance, keyboard/touch navigation previews, and an interactive tour help visitors understand the real workflow.
 
