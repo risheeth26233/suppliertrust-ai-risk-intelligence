@@ -20,11 +20,30 @@ try{
   await page.getByRole('heading',{level:1,name:'Supplier intelligence, in focus.'}).waitFor();
   const overview=page.getByRole('button',{name:'Overview',exact:true});
   await overview.hover();
-  await page.getByRole('tooltip').filter({hasText:'supplier landscape'}).waitFor();
+  const navTip=page.getByRole('tooltip').filter({hasText:'supplier landscape'});
+  await navTip.waitFor();
+  const tipBounds=await navTip.evaluate(el=>{const r=el.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom}});
+  const sidebarBounds=await page.locator('.sidebar').evaluate(el=>{const r=el.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom}});
+  assert.ok(tipBounds.left>=0&&tipBounds.top>=0&&tipBounds.right<=1440&&tipBounds.bottom<=1000,'navigation preview stays within the viewport');
+  assert.ok(tipBounds.left>=sidebarBounds.left&&tipBounds.right<=sidebarBounds.right&&tipBounds.top>=sidebarBounds.top&&tipBounds.bottom<=sidebarBounds.bottom,'navigation explanation remains in its reserved sidebar panel');
+  assert.ok(await page.locator('.sidebar').evaluate(el=>el.scrollWidth<=el.clientWidth),'navigation preview does not widen the sidebar');
+  await page.screenshot({path:fileURLToPath(new URL('suppliers-navigation-preview.png',out)),animations:'disabled'});
   await overview.focus();
-  await page.getByRole('tooltip').filter({hasText:'supplier landscape'}).waitFor();
+  await page.keyboard.press('Escape');
+  await navTip.waitFor({state:'detached'});
+  await overview.evaluate(el=>el.blur());
+  await overview.focus();
+  await navTip.waitFor();
+  const suppliersNav=page.locator('.nav-link').filter({hasText:'Suppliers'}).first();
+  await suppliersNav.hover();
+  const suppliersTip=page.getByRole('tooltip').filter({hasText:'Find suppliers, compare recorded indicators, and open an investigation'});
+  await suppliersTip.waitFor();
+  await page.screenshot({path:fileURLToPath(new URL('suppliers-navigation-preview.png',out)),animations:'disabled'});
+  assert.ok(await page.locator('.sidebar').evaluate(el=>el.scrollWidth<=el.clientWidth),'supplier preview does not introduce horizontal sidebar scrolling');
+  await suppliersNav.press('Escape');
+  await suppliersTip.waitFor({state:'detached'});
 
-  await page.locator('.nav-link').filter({hasText:'Suppliers'}).first().click();
+  await suppliersNav.click();
   await page.getByRole('heading',{level:1,name:'Supplier directory'}).waitFor();
   await page.getByRole('button',{name:/Add supplier/}).first().click();
   await page.getByLabel('Legal business name').fill('Fictional Example Trading Co');
@@ -81,6 +100,13 @@ try{
   await page.locator('.nav-link').filter({hasText:'Overview'}).first().click();
   await page.getByRole('heading',{level:1,name:'Supplier intelligence, in focus.'}).waitFor();
   await page.screenshot({path:fileURLToPath(new URL('dashboard-desktop.png',out)),fullPage:true,animations:'disabled'});
+  for(const width of [375,390,768,1024,1280,1440,1920]){
+    await page.setViewportSize({width,height:width<=390?844:1000});
+    const layout=await page.evaluate(()=>({scroll:document.documentElement.scrollWidth,client:document.documentElement.clientWidth}));
+    assert.ok(layout.scroll<=layout.client,`dashboard overflows horizontally at ${width}px (${layout.scroll}px)`);
+    if([375,768,1024,1280,1920].includes(width)) await page.screenshot({path:fileURLToPath(new URL(`dashboard-${width}.png`,out)),fullPage:true,animations:'disabled'});
+  }
+  await page.setViewportSize({width:1440,height:1000});
   await page.getByRole('button',{name:/Take product tour/}).click();
   await page.getByRole('dialog',{name:'Welcome to SupplierTrust'}).waitFor();
   const tourTargets=['tour-metrics','tour-featured','tour-risk','tour-evidence','tour-screening','tour-performance','tour-report'];
@@ -125,6 +151,7 @@ try{
   await demo.getByRole('status').filter({hasText:'Fictional, read-only'}).waitFor();
   await demo.locator('.nav-link').filter({hasText:'Suppliers'}).first().click();
   await demo.getByRole('heading',{level:1,name:'Supplier directory'}).waitFor();
+  await demo.screenshot({path:fileURLToPath(new URL('supplier-directory-desktop.png',out)),fullPage:true,animations:'disabled'});
   await demo.getByRole('button',{name:/Open investigation/}).click();
   await demo.getByRole('heading',{level:1,name:'Northstar Components Ltd. (Fictional)'}).waitFor();
   await demo.locator('.nav-link').filter({hasText:'Risk assessment'}).first().click();
@@ -146,6 +173,7 @@ try{
   await demo.getByRole('dialog',{name:'Open a supplier investigation'}).waitFor();
   await demo.getByRole('button',{name:'Skip tour'}).click();
   await demo.getByRole('button',{name:'Open navigation'}).click();
+  await demo.screenshot({path:fileURLToPath(new URL('mobile-navigation.png',out)),fullPage:false,animations:'disabled'});
   await demo.getByRole('button',{name:'About Evidence'}).click();
   await demo.getByRole('tooltip').filter({hasText:'Inspect reviewer-entered sources'}).waitFor();
   assert.deepEqual(demoErrors,[],'public demo reported uncaught JavaScript errors');
