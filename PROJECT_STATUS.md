@@ -8,7 +8,11 @@
 - Preserved local supplier CRUD, evidence entry, PDF text extraction, screening, human decisions, performance entry, audit history, and text reports. Public demo remains read-only and hides writes, uploads, decisions, and live screening actions.
 - Added a Vercel SPA rewrite for deep links. Security headers and the allowed Render API origin are unchanged.
 - Local verification: `python -m pytest -q` passed (6 tests); `npm run build` passed; updated Playwright workflow passed on Microsoft Edge, including local write workflows, report download, guided tour, Back/Forward, touch navigation, mobile overflow checks at 390px/375px, and public-demo control restrictions. Captured screenshots are in the ignored local `output/playwright/` directory.
-- GitHub Actions and the production Vercel redeploy for the redesign are pending the delivery steps recorded after this entry.
+- GitHub Actions passed for commit [`b3d3f75`](https://github.com/risheeth26233/suppliertrust-ai-risk-intelligence/commit/b3d3f75f6f660ee9f82dbea576b5c8b0b8ffac9c) in [run 15](https://github.com/risheeth26233/suppliertrust-ai-risk-intelligence/actions/runs/43450357728).
+- The existing Vercel project deployed successfully as `dpl_6EXZL5AAR2z9bTjAbLNQwYZ4viNu`; the production alias is [suppliertrust-ai-risk-intelligence.vercel.app](https://suppliertrust-ai-risk-intelligence.vercel.app). No Vercel project or paid service was created.
+- Hosted Playwright checks passed against the actual site: dashboard and supplier profile data loaded, risk/evidence/screening/performance/activity/report routes worked, the text report downloaded, `/suppliers/1/risk` loaded directly, and the 375px mobile layout had no horizontal overflow. Browser exceptions and console errors: zero.
+- The live Render `/healthz` returned 200, and the demo API returned the one fictional supplier. Five public write/protected routes (supplier POST, legacy supplier GET, OFAC refresh, document upload, and screening decision) returned 403. Public interface controls for writes and uploads were absent. Render and its isolated Neon database were unchanged by this redesign.
+- Live screenshots are saved in the ignored local `output/playwright/` directory.
 
 ## Implemented
 
