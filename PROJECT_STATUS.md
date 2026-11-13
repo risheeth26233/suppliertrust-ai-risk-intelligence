@@ -1,5 +1,15 @@
 # Project status
 
+## UI/UX transformation (2026-11-13)
+
+- Replaced the former three-view screen with a responsive enterprise intelligence workspace using the existing React/Vite/Lucide stack; no dependencies were added.
+- Added grouped navigation with pointer/keyboard previews and mobile tap help, dismissible page introductions with persistent help, and an eight-step tour that navigates to and highlights real pages.
+- Added data-backed command-center metrics, a real risk distribution, purpose-built featured supplier view, and supplier-specific risk, evidence, screening, performance, activity, and text-report pages. Each view states data limits; no synthetic trend or AI prediction was added.
+- Preserved local supplier CRUD, evidence entry, PDF text extraction, screening, human decisions, performance entry, audit history, and text reports. Public demo remains read-only and hides writes, uploads, decisions, and live screening actions.
+- Added a Vercel SPA rewrite for deep links. Security headers and the allowed Render API origin are unchanged.
+- Local verification: `python -m pytest -q` passed (6 tests); `npm run build` passed; updated Playwright workflow passed on Microsoft Edge, including local write workflows, report download, guided tour, Back/Forward, touch navigation, mobile overflow checks at 390px/375px, and public-demo control restrictions. Captured screenshots are in the ignored local `output/playwright/` directory.
+- GitHub Actions and the production Vercel redeploy for the redesign are pending the delivery steps recorded after this entry.
+
 ## Implemented
 
 SupplierTrust is a local-first supplier due-diligence prototype with supplier records, identifier format checks, reviewer-entered evidence, PDF text extraction, screening and human decisions, sourced performance observations, explainable risk indicators, audit events, and text reports. The React workspace includes overview, directory, profile, evidence, performance, audit, and screening workflows with responsive layouts and restrained motion.

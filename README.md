@@ -21,6 +21,12 @@ npm run dev
 
 Open http://127.0.0.1:5173. SQLite is the local default (`suppliertrust.db`). `SUPPLIERTRUST_DB` can select another SQLite file. Do not use real supplier records or documents.
 
+## Interface
+
+The React workspace includes an evidence-led command center, searchable and filterable supplier directory, and linked investigation pages for risk, evidence, screening, performance, activity, and reports. Navigation previews work with pointer and keyboard focus; mobile users have tap-accessible guidance. Each section includes a dismissible page introduction and persistent help, and the interactive **Explore SupplierTrust** tour follows the real screens. Reduced-motion preferences are respected.
+
+Local mode retains the writable supplier, evidence, PDF text extraction, screening, review, performance, activity, and report flows. The hosted demo remains fictional and read-only. It does not expose local write controls or live screening refreshes.
+
 ## Public demo configuration
 
 The fictional, read-only demo is live at [suppliertrust-ai-risk-intelligence.vercel.app](https://suppliertrust-ai-risk-intelligence.vercel.app). Its API runs on Render and uses an isolated Neon PostgreSQL database; deployment and verification details are in [DEPLOYMENT.md](DEPLOYMENT.md) and [PROJECT_STATUS.md](PROJECT_STATUS.md).
