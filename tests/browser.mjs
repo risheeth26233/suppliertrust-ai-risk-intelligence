@@ -18,6 +18,9 @@ page.on('dialog',d=>d.accept());
 try{
   await page.goto(base,{waitUntil:'domcontentloaded'});
   await page.getByRole('heading',{level:1,name:'Supplier intelligence, in focus.'}).waitFor();
+  assert.equal(await page.locator('.nav-info').count(),0,'sidebar navigation has no duplicate information buttons');
+  assert.equal(await page.locator('button:has(svg.lucide-info)').count(),0,'no circular info-icon buttons remain');
+  assert.equal(await page.locator('.demo-banner .lucide-info').count(),0,'demo banner keeps its warning shield without a duplicate info icon');
   const overview=page.getByRole('button',{name:'Overview',exact:true});
   await overview.hover();
   const navTip=page.getByRole('tooltip').filter({hasText:'supplier landscape'});
@@ -45,6 +48,11 @@ try{
 
   await suppliersNav.click();
   await page.getByRole('heading',{level:1,name:'Supplier directory'}).waitFor();
+  assert.equal(await page.locator('.intro-icon,.intro-help,.page-help-link').count(),0,'page guidance uses its description and shared Help control without info buttons');
+  await page.getByRole('button',{name:'Open page help'}).click();
+  await page.getByRole('dialog',{name:'What does this page do?'}).waitFor();
+  await page.getByRole('dialog',{name:'What does this page do?'}).getByText('Find suppliers, compare recorded indicators, and open an investigation.',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'Close'}).click();
   await page.getByRole('button',{name:/Add supplier/}).first().click();
   await page.getByLabel('Legal business name').fill('Fictional Example Trading Co');
   await page.getByLabel('Category',{exact:true}).fill('Manufacturing');
@@ -53,10 +61,13 @@ try{
   await page.getByRole('button',{name:/Save supplier/}).click();
   await page.getByRole('heading',{level:2,name:'Fictional Example Trading Co'}).waitFor();
   await page.getByText('GSTIN checksum valid').waitFor();
+  assert.equal(await page.locator('button:has(svg.lucide-info)').count(),0,'supplier profile has no circular info-only controls');
   await page.screenshot({path:fileURLToPath(new URL('supplier-profile-desktop.png',out)),fullPage:true,animations:'disabled'});
 
   await page.locator('.nav-link').filter({hasText:'Risk assessment'}).first().click();
   await page.getByRole('heading',{level:1,name:'Risk assessment'}).waitFor();
+  assert.equal(await page.getByRole('button',{name:'What does the risk index mean?'}).count(),0,'risk navigation uses its labeled contributing-factors action');
+  assert.equal(await page.locator('button:has(svg.lucide-info)').count(),0,'risk page has no circular info-only controls');
   assert.equal(await page.locator('.nav-link.selected').count(),1,'nested supplier pages must have one primary navigation selection');
   assert.equal(await page.locator('.nav-link.parent').getAttribute('aria-current'),'location','Suppliers should be identified as a parent section, not another active page');
   await page.screenshot({path:fileURLToPath(new URL('risk-assessment-desktop.png',out)),fullPage:true,animations:'disabled'});
@@ -161,7 +172,8 @@ try{
   assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),'Open navigation','Escape should restore focus to the menu trigger');
   await mobileMenu.click();
   await page.screenshot({path:fileURLToPath(new URL('mobile-navigation.png',out)),animations:'disabled'});
-  await page.getByRole('button',{name:/About Evidence:/}).click();
+  const mobileEvidence=page.locator('.nav-link').filter({hasText:'Evidence'}).first();
+  await mobileEvidence.focus();
   await page.getByRole('tooltip').filter({hasText:'Inspect reviewer-entered sources'}).waitFor();
   await page.locator('.drawer-scrim').click({position:{x:350,y:300}});
   await page.locator('.sidebar.is-open').waitFor({state:'hidden'});
@@ -191,6 +203,9 @@ try{
   const demoErrors=[],demoConsoleErrors=[];demo.on('pageerror',e=>demoErrors.push(e.message));demo.on('console',m=>{if(m.type()==='error')demoConsoleErrors.push(m.text())});
   await demo.goto(demoBase,{waitUntil:'domcontentloaded'});
   await demo.getByRole('status').filter({hasText:'Fictional, read-only'}).waitFor();
+  assert.equal(await demo.locator('.nav-info').count(),0,'public demo sidebar has no information buttons');
+  assert.equal(await demo.locator('button:has(svg.lucide-info)').count(),0,'public demo has no circular info-only controls');
+  assert.equal(await demo.locator('.demo-banner .lucide-info').count(),0,'public demo banner has no duplicate information icon');
   await demo.locator('.nav-link').filter({hasText:'Suppliers'}).first().click();
   await demo.getByRole('heading',{level:1,name:'Supplier directory'}).waitFor();
   await demo.screenshot({path:fileURLToPath(new URL('supplier-directory-desktop.png',out)),fullPage:true,animations:'disabled'});
@@ -198,6 +213,7 @@ try{
   await demo.getByRole('heading',{level:1,name:'Northstar Components Ltd. (Fictional)'}).waitFor();
   await demo.locator('.nav-link').filter({hasText:'Risk assessment'}).first().click();
   await demo.getByRole('heading',{level:1,name:'Risk assessment'}).waitFor();
+  assert.equal(await demo.locator('.intro-icon,.intro-help,.page-help-link').count(),0,'public page intro has no redundant information controls');
   await demo.getByText('Synthetic match fixture awaiting review').waitFor();
   await demo.screenshot({path:fileURLToPath(new URL('risk-assessment-desktop.png',out)),fullPage:true,animations:'disabled'});
   for(const name of ['Add supplier','Edit details','Save evidence','Save observation','Refresh official OFAC dataset','Delete supplier','False positive','Confirm match']) assert.equal(await demo.getByRole('button',{name:new RegExp(name,'i')}).count(),0,`${name} must not be exposed in the public demo`);
@@ -207,7 +223,9 @@ try{
   await demo.setViewportSize({width:375,height:812});
   await demo.screenshot({path:fileURLToPath(new URL('public-demo-mobile.png',out)),fullPage:true,animations:'disabled'});
   assert.ok(await demo.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),'public demo has horizontal overflow on mobile');
-  await demo.getByRole('button',{name:'Open product tour'}).click();
+  await demo.getByRole('button',{name:'Open page help'}).click();
+  await demo.getByRole('dialog',{name:'What does this page do?'}).waitFor();
+  await demo.getByRole('button',{name:/Explore the product tour/}).click();
   await demo.getByRole('dialog',{name:'Welcome to SupplierTrust'}).waitFor();
   await demo.getByRole('button',{name:'Next',exact:true}).click();
   await demo.getByRole('dialog',{name:'Start with what is recorded'}).waitFor();
@@ -216,7 +234,7 @@ try{
   await demo.getByRole('button',{name:'Skip tour'}).click();
   await demo.getByRole('button',{name:'Open navigation'}).click();
   await demo.screenshot({path:fileURLToPath(new URL('mobile-navigation.png',out)),fullPage:false,animations:'disabled'});
-  await demo.getByRole('button',{name:/About Evidence:/}).click();
+  await demo.locator('.nav-link').filter({hasText:'Evidence'}).first().focus();
   await demo.getByRole('tooltip').filter({hasText:'Inspect reviewer-entered sources'}).waitFor();
   assert.deepEqual(demoErrors,[],'public demo reported uncaught JavaScript errors');
   assert.deepEqual(demoConsoleErrors,[],'public demo reported console errors');
