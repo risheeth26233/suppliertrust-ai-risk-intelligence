@@ -13,7 +13,7 @@ try{
  await p.goto(base);await heading('Command Center');
  await p.getByRole('button',{name:'Supplier Directory',exact:true}).click();await heading('Supplier directory');
  await p.getByRole('button',{name:/Add supplier/}).first().click();
- const name=`V2 Workflow ${Date.now()}`;
+ const name='Fictional Example Trading Co';
  await p.getByLabel('Legal business name').fill(name);await p.getByLabel('Category',{exact:true}).fill('Manufacturing');await p.getByLabel('Country',{exact:true}).fill('India');await p.getByLabel('GSTIN / CIN or other identifier').fill('27AAPFU0939F1ZV');
  await p.getByRole('button',{name:/Save supplier/}).click();await heading(name);
  await tab('Risk');await heading('Risk assessment');
