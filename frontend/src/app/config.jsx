@@ -1,0 +1,18 @@
+import React from 'react';
+import {FileText, Gauge, LayoutDashboard, Search, Users} from 'lucide-react';
+export const DEMO_MODE=import.meta.env.VITE_DEMO_MODE==='true';
+export const API=(import.meta.env.VITE_API_URL||'http://127.0.0.1:8000').replace(/\/$/,'')+(DEMO_MODE?'/api/demo':'/api');
+export const blank={name:'',country:'India',category:'',identifier:'',contact:'',website:''};
+export const explain={overview:'See the supplier landscape, recorded review signals, and evidence coverage in one place.',directory:'Find suppliers, compare recorded indicators, and open an investigation.',profile:'Review supplier identity, risk factors, evidence, screening, and activity.',risk:'Understand the recorded indicators contributing to this supplier’s concern index.',evidence:'Inspect reviewer-entered sources and documents, including their verification limits.',screening:'Review available screening results and why potential matches need human review.',performance:'Explore dated operational observations recorded for this supplier.',activity:'Follow the dated audit events and reviewer actions recorded for this supplier.',report:'Preview and download the existing text assessment report.',about:'Understand how SupplierTrust records evidence and produces explainable indicators.'};
+export const navGroups=[{title:'WORKSPACE',items:[['overview','Command Center',LayoutDashboard],['directory','Supplier Directory',Users],['profile','Investigation Workspace',Gauge],['report','Reports',FileText]]}];
+export const tourSteps=[
+ {route:'overview',target:'tour-overview',title:'Welcome to SupplierTrust',body:'SupplierTrust organizes supplier information, recorded evidence, and explainable review indicators. This fictional demo is read-only; all displayed records are illustrative.',next:'Explore the overview'},
+ {route:'overview',target:'tour-metrics',title:'Start with what is recorded',body:'These summaries use the supplier fixture and API values. Evidence coverage describes completed workflow fields; it does not measure truth or authenticity.',next:'Open the supplier directory'},
+ {route:'directory',target:'tour-featured',title:'Open a supplier investigation',body:'The directory shows the actual supplier records returned by the API. Search and filters help you narrow the records available in your workspace.',next:'Inspect risk indicators'},
+ {route:'risk',target:'tour-risk',title:'Read the concern index',body:'The index is a deterministic summary of recorded factors, not a probability of fraud or an automated decision. Open any factor to see its stated basis.',next:'Review supporting evidence'},
+ {route:'evidence',target:'tour-evidence',title:'Trace evidence to its source',body:'Each item shows its source, date, reviewer, and status. Extracted text does not establish that a document is authentic.',next:'Review screening context'},
+ {route:'screening',target:'tour-screening',title:'Screening requires judgment',body:'The public example is synthetic and is not an official list entry. A name match alone does not establish identity; a human must review it.',next:'See operational observations'},
+ {route:'performance',target:'tour-performance',title:'Keep observations in context',body:'Performance entries are dated reviewer-supplied observations. SupplierTrust does not invent trends when there is too little history.',next:'Open the assessment report'},
+ {route:'report',target:'tour-report',title:'Take the assessment with you',body:'The existing report is a plain-text assessment generated from the supplier record. It includes its limitations and the recorded evidence.',next:'Finish tour'}
+];
+

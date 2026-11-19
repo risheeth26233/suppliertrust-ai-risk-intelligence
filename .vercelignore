@@ -1,0 +1,6 @@
+showcase-video/
+output/
+tests/
+*.db
+.pytest_cache/
+__pycache__/

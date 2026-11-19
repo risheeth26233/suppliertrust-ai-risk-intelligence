@@ -50,3 +50,12 @@ Only local development can refresh the official OFAC SDN CSV. The public demo us
 ## Verification
 
 See [TESTING.md](TESTING.md) for the backend, PostgreSQL, frontend, and Playwright workflow. CI uses a disposable PostgreSQL service and captures browser screenshots as workflow artifacts. Known limits and last observed results are in [PROJECT_STATUS.md](PROJECT_STATUS.md).
+
+
+## SupplierTrust 2.0 investigation workspace
+
+The graphite frontend centers investigations around a persistent supplier context with Overview, Risk, Evidence, Screening, Performance, Activity, and Report tabs. Global navigation provides Command Center, Supplier Directory, Investigation Workspace, Reports, and Help & Product Tour. The Command Center summarizes API-backed records and recorded concerns; the evidence register provides selectable source details without claiming factor-to-evidence relationships absent from the API.
+
+React source is separated into `frontend/src/app`, `layouts`, `pages`, `features`, `components`, `hooks`, `services`, and `styles`. The entry point is `frontend/src.jsx`. Existing deep links and API contracts are retained. `styles/legacy.css` retains local workflow presentation; `styles/theme.css` defines the 2.0 design system and responsive layouts.
+
+Frontend verification: `npm --prefix frontend run build` and `npm --prefix frontend run test:browser`. Browser regression covers writable local workflows, fictional demo restrictions, report downloads, history, evidence selection, the tour, keyboard drawer focus, and ten pages at 375, 390, 768, 1024, 1280, and 1440 pixels. Screenshots are written to `output/playwright/v2-*.png`.

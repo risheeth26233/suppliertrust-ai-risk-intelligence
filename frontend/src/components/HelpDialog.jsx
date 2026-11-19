@@ -1,0 +1,5 @@
+import {useDialogFocus} from '../hooks/useDialogFocus.js';
+import React from 'react';
+import {CircleHelp, Info, Sparkles, X} from 'lucide-react';
+import {explain} from '../app/config.jsx';
+export function HelpDialog({page,onClose,onTour}){const dialogRef=useDialogFocus(onClose);return <div className="dialog-backdrop" onMouseDown={e=>e.target===e.currentTarget&&onClose()}><section ref={dialogRef} className="help-dialog" role="dialog" aria-modal="true" aria-labelledby="help-title"><button className="icon-button help-close" aria-label="Close" onClick={onClose}><X size={18}/></button><span className="help-dialog-icon"><CircleHelp size={22}/></span><div className="eyebrow">PAGE GUIDE</div><h2 id="help-title">What does this page do?</h2><p>{explain[page]||explain.overview}</p><div className="help-tip"><Info size={16}/><span>SupplierTrust organizes the information available to a reviewer. It does not independently certify suppliers or make regulatory decisions.</span></div><button className="button button-primary" onClick={onTour}><Sparkles size={16}/> Explore the product tour</button></section></div>}

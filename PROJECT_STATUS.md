@@ -49,3 +49,13 @@ The public showcase is read-only and serves a fixed fictional scenario. It denie
 - OFAC SDN is the only live screening source in local mode. No World Bank or company registry APIs are connected. Similarity matching requires human review and does not establish identity.
 - No trained AI model is used. The score is a deterministic indicator index, not a fraud probability or compliance decision.
 - The free-tier services may sleep or suspend at their included usage limits. The application has no user authentication because the public dataset is static and fictional; no real supplier records or documents should be submitted.
+
+
+## SupplierTrust 2.0 — 2026-11-19
+
+- Rebuilt the frontend navigation around the Command Center, directory, unified investigation, reports, and Help & Product Tour.
+- Added persistent supplier context, contextual investigation navigation, a selectable evidence master-detail interface, and explicit risk-factor limitations.
+- Separated React routing, API requests, app state, layout, pages, features, shared controls, guidance, focus management, and styles.
+- Preserved local write/upload/review workflows and fictional read-only demo behavior. No backend, Render, Neon, or risk-model changes.
+- Production build and existing six backend regressions passed. Browser workflow covers local writes and review actions, demo controls, report download, browser history, tour, keyboard navigation, and 60 responsive page checks.
+- Production origin remains https://suppliertrust-ai-risk-intelligence.vercel.app. Deployment verification is recorded in the delivery report.
