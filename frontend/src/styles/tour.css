@@ -31,3 +31,12 @@
 .tour-actions .button {
   min-height: 48px;
 }
+
+@media (max-height: 520px) {
+  .tour-card { padding: 14px; }
+  .tour-progress-bar { margin: 8px 0 10px; }
+  .tour-card h2 { margin: 8px 0 4px; }
+  .tour-card > p { margin: 6px 0; line-height: 1.5; }
+  .tour-card .tour-tip { margin: 8px 0; padding: 7px; }
+  .tour-actions { margin-top: 10px; }
+}
