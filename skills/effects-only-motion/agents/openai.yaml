@@ -1,0 +1,4 @@
+interface:
+  display_name: "Effects-only Motion"
+  short_description: "Build accessible React motion without decorative lettering."
+  default_prompt: "Use $effects-only-motion to add restrained motion to this interface."

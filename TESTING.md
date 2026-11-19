@@ -8,7 +8,11 @@ python -m pytest -q
 cd frontend
 npm ci
 npm run build
+node ../scripts/check-motion-sync.mjs
+npm run test:motion
 ```
+
+The motion test starts a temporary Vite server and captures button frames, reduced-motion, desktop, and mobile screenshots under `output/motion-playground/`. It exercises keyboard tabs, controls, validation, animation cancellation, and verifies the rendered effect is geometry-only. The local playground is not included in the production bundle.
 
 ## Full browser workflow
 

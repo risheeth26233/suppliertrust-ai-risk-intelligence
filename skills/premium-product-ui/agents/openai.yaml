@@ -1,0 +1,4 @@
+interface:
+  display_name: "Premium Product UI"
+  short_description: "Design and refine polished, accessible product interfaces."
+  default_prompt: "Use $premium-product-ui to improve this product interface."

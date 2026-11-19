@@ -38,6 +38,9 @@ jobs:
         working-directory: frontend
       - run: npx playwright install --with-deps chromium
         working-directory: frontend
+      - name: Check reusable motion skill and local playground
+        run: node ../scripts/check-motion-sync.mjs && npm run test:motion
+        working-directory: frontend
       - name: Seed browser fixture
         run: python tests/seed_browser_db.py
       - name: Run desktop and mobile browser workflow
@@ -57,6 +60,7 @@ jobs:
           name: suppliertrust-browser-results
           path: |
             output/playwright/
+            output/motion-playground/
             backend.log
             frontend.log
             demo.log

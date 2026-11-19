@@ -59,3 +59,9 @@ The graphite frontend centers investigations around a persistent supplier contex
 React source is separated into `frontend/src/app`, `layouts`, `pages`, `features`, `components`, `hooks`, `services`, and `styles`. The entry point is `frontend/src.jsx`. Existing deep links and API contracts are retained. `styles/legacy.css` retains local workflow presentation; `styles/theme.css` defines the 2.0 design system and responsive layouts.
 
 Frontend verification: `npm --prefix frontend run build` and `npm --prefix frontend run test:browser`. Browser regression covers writable local workflows, fictional demo restrictions, report downloads, history, evidence selection, the tour, keyboard drawer focus, and ten pages at 375, 390, 768, 1024, 1280, and 1440 pixels. Screenshots are written to `output/playwright/v2-*.png`.
+
+## Personal UI and motion skills
+
+Versioned Codex skill sources are in `skills/premium-product-ui/` and `skills/effects-only-motion/`. Install them into the user skill directory with `scripts/install-skills.ps1`; it refuses to overwrite existing skills. A new Codex session may be needed to refresh skill discovery.
+
+The independent React motion examples are in `frontend/src/motion/`; the effects-only skill carries a synchronized reusable copy and CI checks for drift. Run `node scripts/check-motion-sync.mjs` and, from `frontend`, `npm run test:motion`. The local-only playground is available at `http://127.0.0.1:5173/dev/motion.html` while Vite is running. It is not part of the production build or hosted site.
