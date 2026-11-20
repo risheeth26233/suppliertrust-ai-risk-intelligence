@@ -1,0 +1,12 @@
+/recordings/
+/renders/
+/.tts-runtime/
+/final/*.mp4
+/final/*.png
+/final/*.wav
+/production/week02/node_modules/
+/production/week02/build/
+/production/week02/.remotion-tmp/
+/production/week02/out/
+/production/week02/public/*.webm
+/production/week02-music-search.json

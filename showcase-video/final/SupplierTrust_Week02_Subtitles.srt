@@ -1,0 +1,87 @@
+1
+00:00:00,040 --> 00:00:03,330
+Every supplier decision begins with incomplete information.
+
+2
+00:00:03,868 --> 00:00:08,127
+A quote tells you a price; due diligence asks what supports the relationship.
+
+3
+00:00:08,730 --> 00:00:18,006
+NIST's 2026 guide frames due diligence as research into pertinent supplier information before decisions, within ICT cyber supply chains.
+
+4
+00:00:18,541 --> 00:00:27,296
+The OECD reports fewer than one in five large listed companies evaluate supplier risk against environmental or human-rights criteria.
+
+5
+00:00:27,376 --> 00:00:37,856
+SupplierTrust brings identity, recorded evidence, synthetic screening, explainable indicators, human review and a report into one traceable workspace.
+
+6
+00:00:37,936 --> 00:00:42,575
+The Command Center summarizes the available supplier records and review indicators.
+
+7
+00:00:43,105 --> 00:00:48,772
+In the directory, we open Northstar Components, a fictional supplier created for this demonstration.
+
+8
+00:00:49,286 --> 00:00:52,565
+The investigation workspace brings its profile into view.
+
+9
+00:00:53,060 --> 00:00:55,939
+Risk Assessment shows a deterministic concern index.
+
+10
+00:00:56,466 --> 00:01:01,246
+Expand a factor to see its recorded basis; this is not a probability of fraud.
+
+11
+00:01:01,769 --> 00:01:10,704
+Evidence Explorer shows the source, reviewer, date and notes attached to a record; provenance adds context, but does not prove authenticity.
+
+12
+00:01:11,212 --> 00:01:13,105
+Screening is explicitly synthetic.
+
+13
+00:01:13,630 --> 00:01:19,712
+OFAC advises comparing full available details because many potential name matches are false positives.
+
+14
+00:01:20,255 --> 00:01:25,443
+Performance and activity show only the observations and history in this fixture.
+
+15
+00:01:25,987 --> 00:01:29,292
+The report gathers the current assessment and its limitations.
+
+16
+00:01:29,835 --> 00:01:33,272
+We can preview it, then download the supported text report.
+
+17
+00:01:33,352 --> 00:01:34,897
+React presents the workflow.
+
+18
+00:01:35,459 --> 00:01:38,402
+FastAPI serves the assessment and report logic.
+
+19
+00:01:38,932 --> 00:01:42,051
+PostgreSQL supports the writable local application.
+
+20
+00:01:42,575 --> 00:01:45,584
+The public demo uses a fixed fictional fixture.
+
+21
+00:01:45,664 --> 00:01:50,579
+One review path, recorded evidence, explainable indicators and reporting.
+
+22
+00:01:51,122 --> 00:01:52,608
+But this demo is read-only.

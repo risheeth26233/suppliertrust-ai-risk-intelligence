@@ -65,3 +65,7 @@ Frontend verification: `npm --prefix frontend run build` and `npm --prefix front
 Versioned Codex skill sources are in `skills/premium-product-ui/` and `skills/effects-only-motion/`. Install them into the user skill directory with `scripts/install-skills.ps1`; it refuses to overwrite existing skills. A new Codex session may be needed to refresh skill discovery.
 
 The independent React motion examples are in `frontend/src/motion/`; the effects-only skill carries a synchronized reusable copy and CI checks for drift. Run `node scripts/check-motion-sync.mjs` and, from `frontend`, `npm run test:motion`. The local-only playground is available at `http://127.0.0.1:5173/dev/motion.html` while Vite is running. It is not part of the production build or hosted site.
+
+## Week 02 product film
+
+The new narrated, research-backed workflow film and its verification notes are in [`showcase-video`](showcase-video/README.md). The MP4, voiceover, and browser recordings are local production assets and are not published or committed.

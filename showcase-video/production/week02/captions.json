@@ -1,0 +1,112 @@
+[
+  {
+    "start": 0.04,
+    "end": 3.330125,
+    "text": "Every supplier decision begins with incomplete information."
+  },
+  {
+    "start": 3.867583,
+    "end": 8.127167,
+    "text": "A quote tells you a price; due diligence asks what supports the relationship."
+  },
+  {
+    "start": 8.729707999999999,
+    "end": 18.005583,
+    "text": "NIST's 2026 guide frames due diligence as research into pertinent supplier information before decisions, within ICT cyber supply chains."
+  },
+  {
+    "start": 18.541207999999997,
+    "end": 27.296,
+    "text": "The OECD reports fewer than one in five large listed companies evaluate supplier risk against environmental or human-rights criteria."
+  },
+  {
+    "start": 27.375999999999998,
+    "end": 37.856,
+    "text": "SupplierTrust brings identity, recorded evidence, synthetic screening, explainable indicators, human review and a report into one traceable workspace."
+  },
+  {
+    "start": 37.936,
+    "end": 42.574708,
+    "text": "The Command Center summarizes the available supplier records and review indicators."
+  },
+  {
+    "start": 43.10525,
+    "end": 48.77225,
+    "text": "In the directory, we open Northstar Components, a fictional supplier created for this demonstration."
+  },
+  {
+    "start": 49.285792,
+    "end": 52.564750000000004,
+    "text": "The investigation workspace brings its profile into view."
+  },
+  {
+    "start": 53.060167,
+    "end": 55.938542,
+    "text": "Risk Assessment shows a deterministic concern index."
+  },
+  {
+    "start": 56.465542,
+    "end": 61.24625,
+    "text": "Expand a factor to see its recorded basis; this is not a probability of fraud."
+  },
+  {
+    "start": 61.768958,
+    "end": 70.704208,
+    "text": "Evidence Explorer shows the source, reviewer, date and notes attached to a record; provenance adds context, but does not prove authenticity."
+  },
+  {
+    "start": 71.212333,
+    "end": 73.10454200000001,
+    "text": "Screening is explicitly synthetic."
+  },
+  {
+    "start": 73.629542,
+    "end": 79.71187499999999,
+    "text": "OFAC advises comparing full available details because many potential name matches are false positives."
+  },
+  {
+    "start": 80.254667,
+    "end": 85.44304199999999,
+    "text": "Performance and activity show only the observations and history in this fixture."
+  },
+  {
+    "start": 85.98683299999999,
+    "end": 89.292083,
+    "text": "The report gathers the current assessment and its limitations."
+  },
+  {
+    "start": 89.834542,
+    "end": 93.27199999999999,
+    "text": "We can preview it, then download the supported text report."
+  },
+  {
+    "start": 93.352,
+    "end": 94.89720799999999,
+    "text": "React presents the workflow."
+  },
+  {
+    "start": 95.458708,
+    "end": 98.401958,
+    "text": "FastAPI serves the assessment and report logic."
+  },
+  {
+    "start": 98.931833,
+    "end": 102.051458,
+    "text": "PostgreSQL supports the writable local application."
+  },
+  {
+    "start": 102.57487499999999,
+    "end": 105.584,
+    "text": "The public demo uses a fixed fictional fixture."
+  },
+  {
+    "start": 105.664,
+    "end": 110.57891699999999,
+    "text": "One review path, recorded evidence, explainable indicators and reporting."
+  },
+  {
+    "start": 111.12154199999999,
+    "end": 112.60799999999999,
+    "text": "But this demo is read-only."
+  }
+]

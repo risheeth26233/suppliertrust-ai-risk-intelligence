@@ -1,0 +1,16 @@
+{
+  "name": "suppliertrust-week02-film",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "render": "remotion render src/index.jsx SupplierTrustWeek02 ../../final/SupplierTrust_Week02_silent.mp4 --codec h264 --crf 18 --log=error",
+    "thumbnail": "remotion still src/index.jsx SupplierTrustWeek02 ../../final/SupplierTrust_Week02_Thumbnail.png --frame 3500 --log=error"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.529",
+    "remotion": "4.0.529",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  }
+}

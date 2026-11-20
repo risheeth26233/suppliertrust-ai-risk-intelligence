@@ -1,0 +1,107 @@
+import assert from 'node:assert/strict';
+import {mkdir, rename, writeFile, copyFile} from 'node:fs/promises';
+import path from 'node:path';
+import {fileURLToPath, pathToFileURL} from 'node:url';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const showcase = path.resolve(here, '../..');
+const repo = path.resolve(here, '../../..');
+const recordings = path.join(showcase, 'recordings', 'week02');
+const screenshots = path.join(recordings, 'screenshots');
+const {chromium} = await import(pathToFileURL(path.join(repo, 'frontend', 'node_modules', 'playwright', 'index.mjs')).href);
+await mkdir(screenshots, {recursive: true});
+await mkdir(path.join(recordings, 'tmp'), {recursive: true});
+await mkdir(path.join(here, 'public'), {recursive: true});
+
+const browser = await chromium.launch({headless: true, channel: 'msedge'});
+const size = {width: 1920, height: 1080};
+const context = await browser.newContext({viewport: size, deviceScaleFactor: 1, acceptDownloads: true, recordVideo: {dir: path.join(recordings, 'tmp'), size}});
+const page = await context.newPage();
+const born = Date.now();
+const errors = [];
+page.on('pageerror', error => errors.push(`pageerror: ${error.message}`));
+page.on('console', message => {if (message.type() === 'error') errors.push(`console: ${message.text()}`)});
+const url = 'https://suppliertrust-ai-risk-intelligence.vercel.app';
+await page.goto(url, {waitUntil: 'domcontentloaded', timeout: 60000});
+await page.getByRole('heading', {name: 'Command Center', exact: true}).waitFor({timeout: 60000});
+await page.getByText('Northstar Components Ltd. (Fictional)', {exact: true}).waitFor({timeout: 60000});
+await page.waitForTimeout(400);
+await page.addStyleTag({content: `
+  #film-cursor { position:fixed; z-index:2147483647; pointer-events:none; left:0; top:0; width:13px; height:13px; border:2px solid #071019; border-radius:50%; background:#64e0b0; box-shadow:0 0 0 4px #64e0b033,0 0 18px #64e0b088; transform:translate(-50%,-50%); opacity:0; transition:left .16s ease,top .16s ease,opacity .16s ease; }
+  #film-cursor.visible { opacity:1; }
+  #film-cursor.tap { animation:filmTap .38s ease-out; }
+  @keyframes filmTap { 0%{box-shadow:0 0 0 4px #64e0b033,0 0 18px #64e0b088} 60%{box-shadow:0 0 0 17px #64e0b000,0 0 22px #64e0b0aa} 100%{box-shadow:0 0 0 4px #64e0b033,0 0 18px #64e0b088} }
+`});
+await page.evaluate(() => {
+  const dot = document.createElement('div'); dot.id = 'film-cursor'; document.body.append(dot);
+  document.addEventListener('mousemove', e => {dot.style.left=`${e.clientX}px`;dot.style.top=`${e.clientY}px`;dot.classList.add('visible')}, true);
+  document.addEventListener('click', () => {dot.classList.remove('tap');void dot.offsetWidth;dot.classList.add('tap')}, true);
+});
+const start = Date.now();
+const uiOffsetSeconds = (start - born) / 1000;
+const hold = async seconds => {const remaining = start + seconds * 1000 - Date.now(); if (remaining > 0) await page.waitForTimeout(remaining)};
+const snap = name => page.screenshot({path: path.join(screenshots, `${name}.png`), animations: 'disabled'});
+
+await page.getByRole('button', {name: 'Take product tour', exact: true}).click();
+await page.getByRole('dialog', {name: 'Welcome to SupplierTrust'}).waitFor();
+await snap('01-command-center-tour');
+await hold(3.2);
+await page.getByRole('button', {name: 'Close product tour'}).click();
+await page.getByRole('dialog').waitFor({state: 'detached'});
+await hold(4.0);
+await page.getByRole('button', {name: 'Supplier Directory', exact: true}).click();
+await page.getByRole('heading', {name: 'Supplier directory', exact: true}).waitFor();
+await page.getByRole('heading', {name: 'Northstar Components Ltd. (Fictional)', exact: true}).waitFor();
+await snap('02-supplier-directory');
+await hold(11);
+await page.getByRole('button', {name: /Open investigation/}).click();
+await page.getByRole('heading', {level: 1, name: 'Northstar Components Ltd. (Fictional)'}).waitFor();
+await hold(18);
+const tab = async name => page.locator('.investigation-tabs').getByRole('button').filter({hasText: new RegExp(`^${name}`)}).first().click();
+await tab('Risk');
+await page.getByRole('heading', {name: 'Risk assessment', exact: true}).waitFor();
+await page.getByRole('heading', {name: 'Observed concern index', exact: true}).waitFor();
+await page.locator('.factor-item summary').first().click();
+await page.locator('.factor-item[open]').waitFor();
+await snap('03-risk-assessment');
+await hold(26);
+await tab('Evidence');
+await page.getByRole('heading', {name: 'Evidence explorer', exact: true}).waitFor();
+await page.locator('.source-list button').last().click();
+await page.locator('.source-detail').getByText('Reviewer', {exact: true}).waitFor();
+await snap('04-evidence-explorer');
+await hold(34);
+await tab('Screening');
+await page.getByRole('heading', {name: 'Screening review', exact: true}).waitFor();
+await page.getByRole('heading', {name: 'Synthetic screening example', exact: true}).waitFor();
+await snap('05-synthetic-screening');
+await hold(41);
+await tab('Performance');
+await page.getByRole('heading', {level: 1, name: 'Performance observations', exact: true}).waitFor();
+await snap('06-performance');
+await hold(46);
+await tab('Activity');
+await page.getByRole('heading', {level: 1, name: 'Activity history', exact: true}).waitFor();
+await snap('07-activity');
+await hold(49);
+await tab('Report');
+await page.getByRole('heading', {level: 1, name: 'Assessment report', exact: true}).waitFor();
+await page.getByText('SUPPLIERTRUST — FICTIONAL DEMONSTRATION REPORT', {exact: false}).waitFor();
+await snap('08-assessment-report');
+await hold(51.5);
+const downloadWait = page.waitForEvent('download');
+await page.getByRole('button', {name: 'Download .txt'}).click();
+const report = await downloadWait;
+await report.saveAs(path.join(recordings, 'suppliertrust-demo-assessment.txt'));
+await hold(56);
+const video = page.video();
+await page.close();
+await context.close();
+await browser.close();
+const source = await video.path();
+const target = path.join(recordings, 'week02-live-workflow.webm');
+await rename(source, target);
+await copyFile(target, path.join(here, 'public', 'week02-live-workflow.webm'));
+await writeFile(path.join(here, 'live-metadata.json'), JSON.stringify({site: url, capturedAt: new Date().toISOString(), viewport: size, uiOffsetSeconds, durationSeconds: 56, reportDownload: report.suggestedFilename, errors}, null, 2));
+assert.deepEqual(errors, [], `Production website browser errors: ${errors.join('; ')}`);
+console.log(JSON.stringify({recording: target, viewport: size, uiOffsetSeconds, workflowSeconds: 56, reportDownload: report.suggestedFilename, browserErrors: errors.length}, null, 2));

@@ -1,0 +1,22 @@
+SUPPLIERTRUST — WEEK 02 RESEARCH WORKFLOW DEMO
+Running time: 120 seconds
+Voice: Microsoft Edge neural voice, en-US-AndrewNeural, native pitch, -2% speaking rate. No pitch shifting or robotic effects.
+
+SCENE 1 — RESEARCH-BACKED PROBLEM (00:00–00:27.336)
+Every supplier decision begins with incomplete information. A quote tells you a price; due diligence asks what supports the relationship. NIST's 2026 guide frames due diligence as research into pertinent supplier information before decisions, within ICT cyber supply chains. The OECD reports fewer than one in five large listed companies evaluate supplier risk against environmental or human-rights criteria.
+
+SCENE 2 — SUPPLIERTRUST (00:27.336–00:37.896)
+SupplierTrust brings identity, recorded evidence, synthetic screening, explainable indicators, human review and a report into one traceable workspace.
+
+SCENE 3 — ACTUAL PRODUCT WORKFLOW (00:37.896–01:33.312)
+The Command Center summarizes the available supplier records and review indicators. In the directory, we open Northstar Components, a fictional supplier created for this demonstration. The investigation workspace brings its profile into view. Risk Assessment shows a deterministic concern index. Expand a factor to see its recorded basis; this is not a probability of fraud. Evidence Explorer shows the source, reviewer, date and notes attached to a record; provenance adds context, but does not prove authenticity. Screening is explicitly synthetic. OFAC advises comparing full available details because many potential name matches are false positives. Performance and activity show only the observations and history in this fixture. The report gathers the current assessment and its limitations. We can preview it, then download the supported text report.
+
+SCENE 4 — HOW IT WORKS (01:33.312–01:45.624)
+React presents the workflow. FastAPI serves the assessment and report logic. PostgreSQL supports the writable local application. The public demo uses a fixed fictional fixture.
+
+SCENE 5 — ADVANTAGES AND LIMITS (01:45.624–01:56)
+One review path, recorded evidence, explainable indicators and reporting. But this demo is read-only.
+On-screen text also states: Synthetic screening. Limited live integrations. Human verification required. Deterministic indicators are not fraud predictions.
+
+SCENE 6 — CLOSE (01:56–02:00)
+No spoken line; the SupplierTrust name, “Evidence before decisions,” live demo URL and GitHub repository resolve over music.
